@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07131d" />
+  <title>UTM OPS — Điều phối bay đô thị</title>
+  <meta name="description" content="MVP quản lý UAV, kế hoạch bay, phê duyệt trước bay và nhật ký vận hành." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#dashboard" aria-label="UTM OPS">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span><strong>UTM</strong><small>OPS CONSOLE</small></span>
+      </a>
+      <nav class="nav" aria-label="Điều hướng chính">
+        <button class="nav-item active" data-page="dashboard"><span class="icon">⌁</span>Tổng quan</button>
+        <button class="nav-item" data-page="plans"><span class="icon">◇</span>Kế hoạch bay <em id="pendingBadge">3</em></button>
+        <button class="nav-item" data-page="fleet"><span class="icon">⌾</span>Đội UAV</button>
+        <button class="nav-item" data-page="alerts"><span class="icon">△</span>Cảnh báo & lệnh <em class="danger" id="alertBadge">2</em></button>
+        <button class="nav-item" data-page="logs"><span class="icon">≡</span>Nhật ký hệ thống</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="system-health"><span class="pulse"></span><div><b>Hệ thống ổn định</b><small>API · DB · Mô phỏng</small></div></div>
+        <div class="operator"><span class="avatar">K</span><div><b>Khánh Nguyễn</b><small>Điều phối viên</small></div><button title="Cài đặt">•••</button></div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <button class="menu-btn" id="menuBtn" aria-label="Mở menu">☰</button>
+        <div class="breadcrumb"><span>TRUNG TÂM ĐIỀU HÀNH</span><b>/</b><strong id="pageCrumb">Tổng quan</strong></div>
+        <div class="top-actions">
+          <span class="clock"><i></i><b id="clock">--:--:--</b><small>ICT</small></span>
+          <button class="icon-btn" id="resetBtn" title="Khôi phục dữ liệu mẫu">↻</button>
+          <button class="primary-btn" id="newPlanBtn"><span>＋</span>Tạo kế hoạch bay</button>
+        </div>
+      </header>
+
+      <section class="page active" id="dashboard">
+        <div class="page-heading">
+          <div><span class="eyebrow">LIVE OPERATIONS</span><h1>Không phận trong tầm kiểm soát.</h1><p>Theo dõi hoạt động UAV, xử lý phê duyệt và phản ứng với sự kiện theo thời gian thực.</p></div>
+          <div class="weather"><span class="weather-icon">≈</span><div><b>28°C</b><small>Gió Đông Nam · 12 km/h</small></div><span class="flyable">THUẬN LỢI</span></div>
+        </div>
+
+        <div class="stats-grid">
+          <article class="stat"><div class="stat-top"><span>ĐANG HOẠT ĐỘNG</span><i class="dot cyan"></i></div><strong id="activeCount">04</strong><p><b>+1</b> trong 60 phút qua</p><span class="spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></article>
+          <article class="stat"><div class="stat-top"><span>CHỜ PHÊ DUYỆT</span><i class="dot amber"></i></div><strong id="pendingCount">03</strong><p>Cần xử lý trước <b>14:30</b></p><span class="spark amber"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></article>
+          <article class="stat"><div class="stat-top"><span>ĐỘI UAV SẴN SÀNG</span><i class="dot green"></i></div><strong id="readyCount">08<span>/ 10</span></strong><p><b>80%</b> năng lực khai thác</p><div class="progress"><i style="width:80%"></i></div></article>
+          <article class="stat alert-stat"><div class="stat-top"><span>CẢNH BÁO MỞ</span><i class="dot red"></i></div><strong id="openAlertCount">02</strong><p><b>01 mức cao</b> · cần phản hồi</p><div class="alert-line"><i></i></div></article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel map-panel">
+            <div class="panel-head"><div><span class="eyebrow">AIRSPACE VIEW</span><h2>Bản đồ hoạt động</h2></div><div class="segmented"><button class="active">Trực tiếp</button><button>Mô phỏng</button></div></div>
+            <div class="map" id="map">
+              <div class="map-grid"></div><div class="river"></div>
+              <span class="zone z1">VÙNG HẠN CHẾ</span><span class="zone z2">HÀNH LANG A2</span>
+              <div class="geofence"></div>
+              <button class="drone d1" data-drone="UAV-01"><span>▲</span><b>UAV-01</b><small>86m · 42km/h</small></button>
+              <button class="drone d2" data-drone="UAV-03"><span>▲</span><b>UAV-03</b><small>112m · 36km/h</small></button>
+              <button class="drone d3 warning" data-drone="UAV-07"><span>▲</span><b>UAV-07</b><small>68m · CẢNH BÁO</small></button>
+              <button class="drone d4" data-drone="UAV-09"><span>▲</span><b>UAV-09</b><small>94m · 38km/h</small></button>
+              <div class="map-legend"><span><i class="cyan"></i>Đang bay</span><span><i class="amber"></i>Cảnh báo</span><span><i class="outline"></i>Geofence</span></div>
+              <div class="map-coord">10.7769° N, 106.7009° E</div>
+            </div>
+          </article>
+
+          <article class="panel queue-panel">
+            <div class="panel-head"><div><span class="eyebrow">APPROVAL QUEUE</span><h2>Chờ phê duyệt</h2></div><button class="text-btn" data-goto="plans">Xem tất cả →</button></div>
+            <div id="approvalQueue" class="queue-list"></div>
+          </article>
+        </div>
+
+        <article class="panel activity-panel">
+          <div class="panel-head"><div><span class="eyebrow">SYSTEM STREAM</span><h2>Hoạt động gần đây</h2></div><button class="filter-btn">24 giờ qua⌄</button></div>
+          <div class="activity-table" id="activityTable"></div>
+        </article>
+      </section>
+
+      <section class="page" id="plans">
+        <div class="page-heading compact"><div><span class="eyebrow">FLIGHT CLEARANCE</span><h1>Kế hoạch bay</h1><p>Tạo, kiểm tra và phê duyệt nhiệm vụ trước khi chuyển sang mô phỏng.</p></div><button class="primary-btn page-new-plan">＋ Tạo kế hoạch</button></div>
+        <div class="toolbar"><div class="search"><span>⌕</span><input id="planSearch" placeholder="Tìm mã, UAV hoặc người vận hành..." /></div><div class="chips" id="planFilters"><button class="active" data-filter="all">Tất cả</button><button data-filter="pending">Chờ duyệt</button><button data-filter="approved">Đã duyệt</button><button data-filter="simulating">Mô phỏng</button></div></div>
+        <article class="panel table-panel"><div class="data-table plan-table" id="plansTable"></div></article>
+      </section>
+
+      <section class="page" id="fleet">
+        <div class="page-heading compact"><div><span class="eyebrow">FLEET REGISTRY</span><h1>Đội UAV</h1><p>Hồ sơ kỹ thuật, tình trạng kết nối và khả năng sẵn sàng khai thác.</p></div><button class="primary-btn" id="addUavBtn">＋ Thêm UAV</button></div>
+        <div class="fleet-grid" id="fleetGrid"></div>
+      </section>
+
+      <section class="page" id="alerts">
+        <div class="page-heading compact"><div><span class="eyebrow">COMMAND & CONTROL</span><h1>Cảnh báo & lệnh</h1><p>Tiếp nhận sự kiện, phát lệnh điều hành và lưu phản hồi xuyên suốt nhiệm vụ.</p></div></div>
+        <div class="alert-layout"><div class="alert-feed" id="alertFeed"></div><article class="panel command-panel"><span class="eyebrow">QUICK COMMAND</span><h2>Phát lệnh UAV</h2><label>Thiết bị<select id="commandUav"></select></label><label>Lệnh<select id="commandType"><option>Giữ vị trí</option><option>Trở về điểm xuất phát</option><option>Hạ cánh khẩn cấp</option><option>Đổi độ cao</option></select></label><label>Ghi chú<textarea id="commandNote" placeholder="Lý do và chỉ dẫn thêm..."></textarea></label><button class="primary-btn full" id="sendCommandBtn">Gửi lệnh điều hành</button><p class="hint">Mọi lệnh đều được ghi vào nhật ký hệ thống.</p></article></div>
+      </section>
+
+      <section class="page" id="logs">
+        <div class="page-heading compact"><div><span class="eyebrow">AUDIT TRAIL</span><h1>Nhật ký hệ thống</h1><p>Lịch sử bất biến của thay đổi trạng thái, phê duyệt, cảnh báo và lệnh.</p></div><button class="secondary-btn" id="exportBtn">↓ Xuất CSV</button></div>
+        <article class="panel table-panel"><div class="data-table logs-table" id="logsTable"></div></article>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop">
+    <form class="modal" id="planForm">
+      <div class="modal-head"><div><span class="eyebrow">NEW FLIGHT PLAN</span><h2>Tạo kế hoạch bay</h2></div><button type="button" class="close-modal">×</button></div>
+      <div class="stepper"><span class="active">1. Nhiệm vụ</span><i></i><span>2. Lộ trình</span><i></i><span>3. Kiểm tra</span></div>
+      <div class="form-grid">
+        <label class="wide">Tên nhiệm vụ<input name="mission" required placeholder="VD: Khảo sát hành lang điện" /></label>
+        <label>UAV<select name="uav" id="planUav" required></select></label>
+        <label>Người vận hành<input name="operator" required value="Nguyễn Minh An" /></label>
+        <label>Thời gian cất cánh<input name="departure" type="datetime-local" required /></label>
+        <label>Thời lượng dự kiến (phút)<input name="duration" type="number" min="5" max="180" value="35" required /></label>
+        <label>Độ cao tối đa (m)<input name="altitude" type="number" min="10" max="120" value="90" required /></label>
+        <label>Loại nhiệm vụ<select name="type"><option>Khảo sát</option><option>Giao nhận</option><option>Giám sát</option><option>Chụp ảnh</option></select></label>
+        <label class="wide">Khu vực bay<input name="route" required placeholder="VD: Quận 1 → Quận 3" /></label>
+      </div>
+      <div class="preflight"><span>✓ UAV hợp lệ</span><span>✓ Phi công đủ quyền</span><span>✓ Độ cao trong giới hạn</span><span>○ Chờ kiểm tra xung đột</span></div>
+      <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Hủy</button><button type="submit" class="primary-btn">Lưu & gửi phê duyệt</button></div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast"><span>✓</span><div><b>Đã cập nhật</b><small>Thao tác hoàn tất.</small></div></div>
+  <script src="./app.js"></script>
+</body>
+</html>
