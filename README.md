@@ -1,21 +1,51 @@
-# UTM OPS MVP
+# SkyPermit UTM
 
-MVP điều hành UAV dành cho TV1: quản lý hồ sơ UAV, kế hoạch bay, phê duyệt trước bay, cảnh báo, lệnh và nhật ký.
+Ứng dụng Spring Boot đăng ký đơn vị bay cá nhân hoặc doanh nghiệp và chuyến bay UAV, sau đó gửi lệnh sang mô-đun mô phỏng và theo dõi telemetry.
 
-## Chạy local
+## Chức năng
 
-Mở `dist/index.html` trực tiếp trong trình duyệt hoặc chạy một static server tại thư mục dự án.
+- Đăng ký tài khoản cá nhân hoặc doanh nghiệp.
+- Đăng nhập, đăng xuất và duy trì phiên bằng cookie HttpOnly.
+- Mật khẩu được băm bằng BCrypt; dữ liệu được phân tách theo từng tài khoản.
+- Tự động tạo hồ sơ pháp lý đơn vị bay sau khi đăng ký.
+- Khai báo điểm xuất phát, điểm đến, thời gian, độ cao và thời lượng bay.
+- Hỗ trợ drone đa cánh quạt, cánh bằng và hybrid.
+- Gửi lệnh bay đến bộ mô phỏng nội bộ.
+- Giám sát độ cao, tốc độ, pin, tín hiệu và tiến độ hành trình.
+- Lưu dữ liệu bằng H2 tại thư mục `data/`.
 
-## Phạm vi MVP
+## Công nghệ
 
-- Dashboard vận hành và bản đồ mô phỏng
-- Tạo, tìm kiếm, lọc, duyệt hoặc từ chối kế hoạch bay
-- Chuyển kế hoạch đã duyệt sang trạng thái mô phỏng
-- Hồ sơ và tình trạng đội UAV
-- Cảnh báo, xử lý cảnh báo, phát lệnh điều hành
-- Nhật ký bất biến trong phiên dữ liệu và xuất CSV
-- Dữ liệu được lưu bằng `localStorage` của trình duyệt
+- Java 21, Spring Boot 3.5
+- Spring Web, Spring Data JPA, Bean Validation
+- H2 Database
+- HTML, CSS và JavaScript thuần
 
-## Bước tiếp theo
+## Chạy dự án
 
-Thay lớp lưu `localStorage` bằng API/backend và CSDL; bổ sung xác thực, bản đồ GIS thật và hợp đồng bản tin tích hợp mô phỏng.
+Yêu cầu Java 21+. Dự án đã kèm Maven Wrapper nên không cần cài Maven riêng.
+
+```powershell
+.\mvnw.cmd spring-boot:run
+```
+
+Mở `http://localhost:8080`.
+
+## Kiểm thử
+
+```powershell
+.\mvnw.cmd test
+```
+
+Test tích hợp bao phủ đăng ký cá nhân/doanh nghiệp, đăng nhập/đăng xuất và luồng tạo chuyến bay → gửi mô phỏng → đọc telemetry.
+
+## API chính
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
+- `GET /api/companies`
+- `GET/POST /api/flights`
+- `POST /api/flights/{id}/send`
+- `GET /api/flights/{id}/monitoring`
