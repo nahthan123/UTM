@@ -1,7 +1,7 @@
-package vn.utm.web.dto;
+package vn.utm.dto.request;
 
 import jakarta.validation.constraints.*;
-import vn.utm.domain.AccountType;
+import vn.utm.common.enums.*;;
 
 public record RegisterRequest(
         @NotNull AccountType accountType,
@@ -14,4 +14,5 @@ public record RegisterRequest(
         String companyName,
         String taxCode,
         String representative,
-        String licenseNumber) {}
+        String licenseNumber) {
+}

@@ -4,9 +4,12 @@ import jakarta.servlet.http.HttpSession;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import vn.utm.domain.*;
+import vn.utm.common.enums.*;
+import vn.utm.dto.request.LoginRequest;
+import vn.utm.dto.request.RegisterRequest;
+import vn.utm.model.CompanyProfile;
+import vn.utm.model.UserAccount;
 import vn.utm.repository.*;
-import vn.utm.web.dto.*;
 
 @Service
 public class AuthService {
@@ -23,15 +26,20 @@ public class AuthService {
     @Transactional
     public UserAccount register(RegisterRequest request) {
         String email = request.email().trim().toLowerCase();
-        if (accounts.existsByEmailIgnoreCase(email)) throw new IllegalArgumentException("Email đã được sử dụng");
+        if (accounts.existsByEmailIgnoreCase(email))
+            throw new IllegalArgumentException("Email đã được sử dụng");
         validateTypeFields(request);
-        String identityCode = request.accountType() == AccountType.BUSINESS ? request.taxCode().trim() : request.nationalId().trim();
-        if (companies.existsByTaxCode(identityCode)) throw new IllegalArgumentException("Mã định danh đã được đăng ký");
+        String identityCode = request.accountType() == AccountType.BUSINESS ? request.taxCode().trim()
+                : request.nationalId().trim();
+        if (companies.existsByTaxCode(identityCode))
+            throw new IllegalArgumentException("Mã định danh đã được đăng ký");
 
         CompanyProfile profile = new CompanyProfile();
-        profile.setCompanyName(request.accountType() == AccountType.BUSINESS ? request.companyName().trim() : request.fullName().trim());
+        profile.setCompanyName(request.accountType() == AccountType.BUSINESS ? request.companyName().trim()
+                : request.fullName().trim());
         profile.setTaxCode(identityCode);
-        profile.setRepresentative(request.accountType() == AccountType.BUSINESS ? request.representative().trim() : request.fullName().trim());
+        profile.setRepresentative(request.accountType() == AccountType.BUSINESS ? request.representative().trim()
+                : request.fullName().trim());
         profile.setEmail(email);
         profile.setPhone(request.phone().trim());
         profile.setAddress(request.address().trim());
@@ -64,8 +72,10 @@ public class AuthService {
 
     public UserAccount requireAccount(HttpSession session) {
         Object id = session.getAttribute(SESSION_ACCOUNT_ID);
-        if (!(id instanceof Long accountId)) throw new AuthRequiredException("Vui lòng đăng nhập để tiếp tục");
-        return accounts.findById(accountId).orElseThrow(() -> new AuthRequiredException("Phiên đăng nhập không còn hợp lệ"));
+        if (!(id instanceof Long accountId))
+            throw new AuthRequiredException("Vui lòng đăng nhập để tiếp tục");
+        return accounts.findById(accountId)
+                .orElseThrow(() -> new AuthRequiredException("Phiên đăng nhập không còn hợp lệ"));
     }
 
     private void validateTypeFields(RegisterRequest request) {
@@ -80,7 +90,11 @@ public class AuthService {
     }
 
     private void requireText(String value, String message) {
-        if (value == null || value.isBlank()) throw new IllegalArgumentException(message);
+        if (value == null || value.isBlank())
+            throw new IllegalArgumentException(message);
     }
-    private String trimToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+
+    private String trimToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
 }
