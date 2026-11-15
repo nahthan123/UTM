@@ -1,13 +1,9 @@
 package vn.utm.repository;
-
-import org.springframework.data.jpa.repository.JpaRepository;
-
 import vn.utm.model.UserAccount;
-
-import java.util.Optional;
-
-public interface UserAccountRepository extends JpaRepository<UserAccount, Long> {
+import org.springframework.data.jpa.repository.*;
+import java.util.*;
+public interface UserAccountRepository extends JpaRepository<UserAccount, UUID>, JpaSpecificationExecutor<UserAccount> {
+    Optional<UserAccount> findByUsernameIgnoreCase(String username);
     Optional<UserAccount> findByEmailIgnoreCase(String email);
-
-    boolean existsByEmailIgnoreCase(String email);
+    Optional<UserAccount> findByTaxCodeIgnoreCase(String taxCode);
 }

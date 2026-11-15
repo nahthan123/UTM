@@ -24,7 +24,9 @@ public class AuthController {
     @ResponseStatus(HttpStatus.CREATED)
     public AuthResponse register(@Valid @RequestBody RegisterRequest request, HttpServletRequest servletRequest) {
         UserAccount account = auth.register(request);
-        servletRequest.getSession(true).setAttribute(AuthService.SESSION_ACCOUNT_ID, account.getId());
+        HttpSession session = servletRequest.getSession(true);
+        servletRequest.changeSessionId();
+        session.setAttribute(AuthService.SESSION_ACCOUNT_ID, account.getId());
         return AuthResponse.from(account);
     }
 
