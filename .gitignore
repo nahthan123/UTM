@@ -5,6 +5,7 @@ data/
 .vscode/
 *.iml
 .env
+application-local.properties
 .env.*
 !.env.example
 *.mv.db
