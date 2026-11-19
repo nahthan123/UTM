@@ -1,4 +1,109 @@
-# SkyPermit UTM: tích hợp — bước 1
+# SkyPermit UTM và chuẩn bị tích hợp mô phỏng
+
+## Luồng đã triển khai ngày 19 tháng 11 năm 2026
+
+Operator khai báo UAV, chọn một hoặc nhiều UAV, nhập tên điểm đi/đến, thời gian và
+quỹ đạo. ADMIN duyệt từng kế hoạch; người vận hành xem kết quả và tải JSON lộ trình.
+Mô phỏng và giám sát được chuẩn bị bằng outbox lưu bền vững và phản hồi mock cục bộ.
+Chưa tích hợp SITL/Gazebo, CesiumJS hoặc kiểm tra xung đột chiến lược bằng AI.
+
+### Nộp và xét duyệt
+
+`POST /api/flights/batch` nhận:
+
+```json
+{
+  "droneIds": ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"],
+  "departureName": "Bãi đáp A",
+  "destinationName": "Bãi đáp B",
+  "startTime": "2027-01-01T09:00:00+07:00",
+  "endTime": "2027-01-01T09:10:00+07:00",
+  "trajectoryJson": "[{\"latitude\":16.06,\"longitude\":108.22,\"altitude\":60,\"time\":\"2027-01-01T09:00:00+07:00\"},{\"latitude\":16.07,\"longitude\":108.23,\"altitude\":60,\"time\":\"2027-01-01T09:10:00+07:00\"}]"
+}
+```
+
+UUID trên chỉ minh họa, phải thay bằng UAV thuộc operator đã đăng nhập. Tối đa
+50 UUID không trùng. Cả đợt trong một transaction: một UAV không hợp lệ thì không
+lưu kế hoạch nào. Response HTTP 201 là mảng `FlightPlanResponse`, mỗi UAV một
+`id`, chung `submissionId`, `uavCount` do server tính. Mỗi kế hoạch được duyệt riêng;
+không có giả định cả nhóm đã được duyệt khi chỉ một UAV được duyệt. Lộ trình chung
+không chứng minh các UAV được phân cách an toàn. Tính năng kiểm tra giao cắt giữa
+UAV thuộc khối chiến lược sẽ tích hợp sau.
+
+Tên điểm đi/đến chỉ là nhãn; tọa độ lấy từ waypoint đầu/cuối. Độ cao mới 0–120 m
+AGL; waypoint đầu/cuối khớp giờ cất/hạ cánh. Thời gian không vượt thời lượng tối đa
+của bất cứ UAV nào được chọn. Một UAV không được nộp hai kế hoạch đang mở trùng
+khoảng giờ; khóa UAV khi nộp để tránh hai yêu cầu đồng thời vượt kiểm tra.
+API `POST /api/flights` vẫn nhận `droneId` cho một UAV, thêm hai tên tùy chọn;
+các quy tắc kiểm tra mới cũng áp dụng cho endpoint này.
+
+`PUT /api/flights/{id}/status` nhận `{"status":"APPROVED","reviewNote":"Đồng ý lộ trình"}`.
+Chỉ ADMIN duyệt/từ chối; ghi `reviewedAt`, `reviewedBy`, `reviewNote` (tối đa 1000
+ký tự). ADMIN/MANAGER cập nhật ACTIVE/COMPLETED. Không duyệt kế hoạch đã đến giờ
+cất cánh, hoặc duyệt/kích hoạt khi UAV/người vận hành ngừng hiệu lực hay bị khóa.
+
+### API tích hợp
+
+| Endpoint | Quyền và kết quả |
+| --- | --- |
+| `GET /api/flights/{id}/accepted-plan` | Chủ kế hoạch hoặc staff; JSON snapshot lộ trình đã duyệt, chỉ khi kế hoạch còn hiệu lực và ở APPROVED/ACTIVE/COMPLETED |
+| `GET /api/flights/{id}/integration` | Chủ kế hoạch hoặc staff; tối đa 100 bản tin của kế hoạch, mới nhất trước |
+| `GET /api/integrations?status=FAILED` | ADMIN/MANAGER; tối đa 100 bản tin mới nhất, lọc PENDING/MOCK_DELIVERED/FAILED tùy chọn |
+| `POST /api/integrations/{id}/retry` | ADMIN; gửi lại bản tin chưa nhận, không tạo bản sao; từ chối bản tin không còn phù hợp trạng thái kế hoạch |
+
+Các endpoint dùng cookie session hiện có, chưa có API key/mạng service-to-service.
+Snapshot duyệt là bất biến và không chứa email, số điện thoại hay mật khẩu. Hai
+đích `SIMULATION`, `MONITORING` nhận cùng eventId/payload, có trạng thái tiếp nhận
+riêng. Khóa duy nhất `(flight_id,target,event_type,flight_status)` tránh phát lặp
+cùng sự kiện vòng đời. Thay đổi trạng thái kế hoạch và ghi outbox cùng transaction.
+
+- Duyệt: `flightplan.accepted`.
+- Hủy kế hoạch đã duyệt: `flightplan.cancelled`; kế hoạch PENDING bị hủy không
+  phát bản tin vì chưa bàn giao cho bên nhận.
+- Bắt đầu/kết thúc: `flightplan.status.changed`, kèm trạng thái ACTIVE/COMPLETED.
+
+`UTM_INTEGRATION_MODE=mock` là mặc định: kiểm tra cấu trúc tối thiểu, lưu
+`MOCK_DELIVERED`, số lần gửi, thời điểm và `receipt` có nhãn MOCK. Không có cuộc
+gọi HTTP hoặc WebSocket ra ngoài, không tự đổi APPROVED thành ACTIVE.
+`UTM_INTEGRATION_MODE=disabled` vẫn lưu bản tin PENDING, không tạo receipt.
+Muốn nhận lại bản tin đã chờ, đổi cấu hình về mock, khởi động lại và ADMIN bấm
+Gửi lại. Không có scheduler tự gửi trong đợt này. Payload lỗi được ghi FAILED;
+bản tin chấp thuận chưa gửi bị từ chối retry khi đã qua giờ cất cánh. Bản tin đã có
+receipt thành công không bị phát lại.
+
+Hợp đồng: [JSON Schema](contracts/flightplan-event.schema.json),
+[bản tin ví dụ](contracts/flightplan-accepted.example.json). Dữ liệu quỹ đạo ở
+`flightPlan.waypoints` là mảng JSON, khác `trajectoryJson` là chuỗi ở API nộp.
+Thông tin hệ tọa độ, mốc độ cao, đơn vị và UTC nằm trong `coordinateSystem`.
+Khi thay mock bằng adapter thật, giữ eventId để bên nhận chống lặp, giữ snapshot
+và phản hồi theo từng đích; cần bổ sung xác thực service, ACK/retry và đồng bộ trạng
+thái. Bên nhận không được kích hoạt kế hoạch đã hủy dựa trên snapshot cũ.
+
+Kế hoạch được duyệt từ phiên bản trước không có snapshot outbox vẫn tải được JSON
+với `exportOnly:true`, `deliveryRecorded:false` và `eventId:null`; không bịa phản
+hồi đã gửi. Snapshot đã lưu giữ nguyên các trường phê duyệt kể cả sau
+ACTIVE/COMPLETED; trạng thái trong `flightPlan.status` phản ánh thời điểm duyệt.
+Trường `currentStatus` ở ngoài snapshot cho biết trạng thái hiện thời khi tải.
+
+### Schema bổ sung
+
+Startup chạy script `db/h2-flight-integration.sql` hoặc
+`db/sqlserver-flight-integration.sql` sau migration UTC hiện có, trước Hibernate.
+Script chỉ thêm cột và bảng, không xóa dữ liệu. Với DB SQL Server có sẵn, tài khoản
+khởi động cần quyền ALTER/CREATE hoặc quản trị DB áp dụng script trước. DB SQL
+Server mới vẫn cần schema nền `db/sqlserver-schema.sql`. Chưa thực thi migration
+trên DB trong phiên làm việc này.
+
+Các script khởi động SQL Server được gửi nguyên mỗi file thành một JDBC batch
+(`ScriptUtils.EOF_STATEMENT_SEPARATOR`) để giữ đầy đủ khối `IF ... BEGIN ... END`.
+Không thêm lệnh `GO` của SSMS vào các script này. H2 vẫn tách các câu lệnh bằng
+dấu `;`. Test hồi quy xác nhận cách chia/gửi script qua JDBC giả lập; không thay
+thế kiểm tra thực thi migration trên SQL Server.
+
+Các bản ghi có trước migration nhận `uavCount=1`, `submissionId=null`, không bịa
+người duyệt hoặc tên điểm. Độ cao dữ liệu cũ giữ `AMSL`; kế hoạch mới ghi `AGL`.
+Không đổi số độ cao cũ khi thiếu dữ liệu địa hình. Cả UI lẫn envelope hiển thị mốc
+độ cao riêng của từng kế hoạch.
 
 ## Thời gian và tọa độ
 
@@ -11,10 +116,10 @@
   giờ UTC. Hibernate đọc/ghi với JDBC timezone UTC. Độ chính xác lưu trữ tối đa microsecond.
 - DTO response giữ các tên trường, phân trang và đối tượng lồng hiện có; không trả
   trực tiếp entity hoặc passwordHash. `trajectoryJson` vẫn là chuỗi ở bước 1.
-- Tọa độ WGS84, độ thập phân; vĩ độ ±90, kinh độ ±180. Độ cao không âm,
-  đơn vị mét, AMSL. Cấu hình `utm.coordinates.reference-system=WGS84`,
-  `utm.coordinates.altitude-reference=AMSL`, `utm.coordinates.altitude-unit=metres`
-  khai báo quy ước triển khai; không thực hiện phép đổi hệ tọa độ/độ cao.
+- Tọa độ WGS84, độ thập phân; vĩ độ ±90, kinh độ ±180. Kế hoạch mới dùng
+  0–120 m AGL. Cấu hình `utm.coordinates.reference-system=WGS84`,
+  `utm.coordinates.altitude-reference=AGL`, `utm.coordinates.altitude-unit=metres`.
+  Kế hoạch cũ giữ AMSL qua trường `altitudeReference`; không thực hiện phép đổi độ cao.
 - Form web ghi rõ UTC+7, gửi UTC và hiển thị theo Asia/Ho_Chi_Minh,
   độc lập múi giờ trình duyệt. Validation thực hiện trên instant sau chuyển đổi.
 
@@ -55,7 +160,7 @@ SQL Server chưa được kiểm chứng bằng server thật trong phiên làm 
 
 ## Ví dụ API hiện có
 
-Các API hiện vẫn dùng session; API key và các endpoint tích hợp sẽ bổ sung sau.
+Các API dùng session; API key cho hệ thống ngoài sẽ bổ sung khi nối adapter thật.
 
 ```bash
 curl -c cookies.txt -H 'Content-Type: application/json' \

@@ -7,9 +7,13 @@ không khôi phục trong đợt tích hợp này:
 - Phân loại UAV MULTIROTOR/FIXED_WING/HYBRID đã được bổ sung lại theo yêu cầu
   chỉnh form khai báo phương tiện sau bước 1. `Drone.model` vẫn là tên mẫu UAV;
   dữ liệu cũ chưa biết loại giữ null, người vận hành cập nhật đúng thông số.
-- Các trường yêu cầu bay cũ `missionName`, `departureLocation`, `destinationLocation`,
-  `sentAt` chưa có trường tương đương trong `FlightPlan`.
+- Điểm đi/đến đã bổ sung bằng `departureName`, `destinationName`; tọa độ lấy
+  từ waypoint đầu/cuối. Đợt nộp nhiều UAV dùng `submissionId`, `uavCount`.
+  `missionName` chưa bổ sung; thời điểm nộp dùng `createdAt`.
 
 Hồ sơ doanh nghiệp hiện nằm trong `UserAccount` với `AccountType.BUSINESS`;
 đăng ký qua `RegisterRequest` và `AuthService`. Kế hoạch bay 4D dùng `FlightPlan`
 và `FlightPlanRepository`. Chưa có migration từ các bảng mô hình cũ sang mô hình này.
+
+Đã chuẩn bị outbox/mock cho hai đích mô phỏng và giám sát; chưa kết nối
+ArduPilot SITL/Gazebo, CesiumJS hoặc AI. Chi tiết tại [integration.md](integration.md).

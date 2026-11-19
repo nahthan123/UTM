@@ -21,11 +21,14 @@ public class UtmService {
     private final SystemLogRepository logs;
     private final AuthService auth;
     private final ObjectMapper mapper;
+    private final FlightIntegrationService integration;
 
     public UtmService(UserAccountRepository users, RoleRepository roles, DroneRepository drones,
-                      FlightPlanRepository flights, SystemLogRepository logs, AuthService auth, ObjectMapper mapper) {
+                      FlightPlanRepository flights, SystemLogRepository logs, AuthService auth, ObjectMapper mapper,
+                      FlightIntegrationService integration) {
         this.users = users; this.roles = roles; this.drones = drones;
         this.flights = flights; this.logs = logs; this.auth = auth; this.mapper = mapper;
+        this.integration = integration;
     }
 
     private <T extends BaseEntity> T live(T entity) {
@@ -53,6 +56,13 @@ public class UtmService {
         FlightPlan flight = flights.findById(id).orElseThrow(() -> new NoSuchElementException("Không tìm thấy kế hoạch bay"));
         auth.requireOwner(flight.getOperator().getId(), actor);
         return flight;
+    }
+
+    private FlightPlan editableFlight(UUID id, UserAccount actor) {
+        FlightPlan flight = flights.findForUpdate(id)
+                .orElseThrow(() -> new NoSuchElementException("Không tìm thấy kế hoạch bay"));
+        auth.requireOwner(flight.getOperator().getId(), actor);
+        return live(flight);
     }
 
     private void log(UserAccount actor, String action, String details) {
@@ -156,24 +166,66 @@ public class UtmService {
 
     public FlightPlan createFlight(FlightRequestDto request, UserAccount actor) {
         auth.requireOperator(actor);
-        Drone drone = live(drone(request.droneId(), actor));
+        validateTrajectory(request);
+        return saveFlight(request, actor, UUID.randomUUID(), 1);
+    }
+
+    public List<FlightPlan> createFlightBatch(BatchFlightRequest request, UserAccount actor) {
+        auth.requireOperator(actor);
+        if (new HashSet<>(request.droneIds()).size() != request.droneIds().size())
+            throw new IllegalArgumentException("Danh sách UAV bị trùng");
+        UUID submissionId = UUID.randomUUID();
+        // Lock in a fixed order, so overlapping submissions cannot deadlock each other.
+        List<UUID> ids = request.droneIds().stream().sorted().toList();
+        List<FlightPlan> result = new ArrayList<>();
+        FlightRequestDto common = new FlightRequestDto(ids.getFirst(), request.startTime(), request.endTime(),
+                request.trajectoryJson(), request.departureName(), request.destinationName());
+        validateTrajectory(common);
+        for (UUID id : ids) {
+            result.add(saveFlight(new FlightRequestDto(id, request.startTime(), request.endTime(),
+                    request.trajectoryJson(), request.departureName(), request.destinationName()),
+                    actor, submissionId, ids.size()));
+        }
+        return result;
+    }
+
+    private FlightPlan saveFlight(FlightRequestDto request, UserAccount actor, UUID submissionId, int uavCount) {
+        Drone drone = live(drones.findForScheduling(request.droneId())
+                .orElseThrow(() -> new NoSuchElementException("Không tìm thấy drone")));
         // A submitted plan always belongs to the authenticated operator, never a client-supplied ID.
         if (!drone.getOwner().getId().equals(actor.getId())) auth.deny();
         if (!request.endTime().isAfter(request.startTime())) throw new IllegalArgumentException("Hạ cánh phải sau cất cánh");
         if (Duration.between(request.startTime(), request.endTime()).compareTo(Duration.ofMinutes(drone.getMaxFlightTime())) > 0)
             throw new IllegalArgumentException("Thời lượng vượt khả năng bay của drone");
-        validateTrajectory(request);
+        if (drone.getDroneType() == null) throw new IllegalArgumentException("Vui lòng khai báo loại UAV trước khi nộp kế hoạch");
+        if (!request.startTime().isAfter(Instant.now())) throw new IllegalArgumentException("Cất cánh phải ở tương lai");
+        if (hasOverlappingFlight(drone.getId(), request.startTime(), request.endTime()))
+            throw new IllegalArgumentException("UAV " + drone.getSerialNumber() + " đã có kế hoạch trùng thời gian");
         FlightPlan flight = new FlightPlan();
         flight.setDrone(drone); flight.setOperator(actor); flight.setStartTime(request.startTime());
+        flight.setSubmissionId(submissionId); flight.setUavCount(uavCount);
+        flight.setDepartureName(trimToNull(request.departureName()));
+        flight.setDestinationName(trimToNull(request.destinationName()));
+        flight.setAltitudeReference("AGL");
         flight.setEndTime(request.endTime()); flight.setTrajectoryJson(vn.utm.common.TrajectoryTime.normalize(request.trajectoryJson(), mapper));
         flight.recordActor(actor.getId()); flights.save(flight); log(actor, "FLIGHT_SUBMIT", flight.getId().toString());
         return flight;
     }
 
+    private String trimToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+
+    private boolean hasOverlappingFlight(UUID droneId, Instant startTime, Instant endTime) {
+        return flights.exists((root, query, cb) -> cb.and(
+                cb.equal(root.get("drone").get("id"), droneId), cb.isTrue(root.get("active")),
+                cb.isNull(root.get("deletedAt")),
+                root.get("status").in(FlightStatus.PENDING, FlightStatus.APPROVED, FlightStatus.ACTIVE),
+                cb.lessThan(root.get("startTime"), endTime), cb.greaterThan(root.get("endTime"), startTime)));
+    }
+
     private void validateTrajectory(FlightRequestDto request) {
         try {
             JsonNode points = mapper.readTree(request.trajectoryJson());
-            if (!points.isArray() || points.size() < 2 || points.size() > 10000)
+            if (points == null || !points.isArray() || points.size() < 2 || points.size() > 10000)
                 throw new IllegalArgumentException("Cần từ 2 đến 10000 waypoint");
             Instant previous = null;
             for (JsonNode point : points) {
@@ -182,21 +234,29 @@ public class UtmService {
                         throw new IllegalArgumentException("Waypoint thiếu tọa độ hợp lệ");
                 }
                 if (Math.abs(point.get("latitude").asDouble()) > 90 || Math.abs(point.get("longitude").asDouble()) > 180
-                        || point.get("altitude").asDouble() < 0)
-                    throw new IllegalArgumentException("Tọa độ waypoint ngoài giới hạn");
+                        || point.get("altitude").asDouble() < 0 || point.get("altitude").asDouble() > 120)
+                    throw new IllegalArgumentException("Waypoint cần tọa độ hợp lệ và độ cao 0–120 m AGL trong mô phỏng");
                 Instant time = vn.utm.common.UtcTime.parse(point.path("time").asText());
                 if (time.isBefore(request.startTime()) || time.isAfter(request.endTime()) || (previous != null && !time.isAfter(previous)))
                     throw new IllegalArgumentException("Thời gian waypoint phải tăng và nằm trong khoảng bay");
                 previous = time;
             }
+            if (!vn.utm.common.UtcTime.parse(points.get(0).path("time").asText()).equals(request.startTime())
+                    || !previous.equals(request.endTime()))
+                throw new IllegalArgumentException("Waypoint đầu/cuối phải khớp thời gian cất/hạ cánh");
         } catch (java.io.IOException | DateTimeParseException exception) {
             throw new IllegalArgumentException("Quỹ đạo JSON hoặc thời gian waypoint không hợp lệ");
         }
     }
 
     public FlightPlan status(UUID id, FlightStatus next, UserAccount actor) {
+        return status(id, next, null, actor);
+    }
+
+    public FlightPlan status(UUID id, FlightStatus next, String reviewNote, UserAccount actor) {
         auth.requireStaff(actor);
-        FlightPlan flight = live(flight(id, actor));
+        if (next == FlightStatus.APPROVED || next == FlightStatus.REJECTED) auth.requireAdmin(actor);
+        FlightPlan flight = editableFlight(id, actor);
         boolean valid = switch (flight.getStatus()) {
             case PENDING -> next == FlightStatus.APPROVED || next == FlightStatus.REJECTED;
             case APPROVED -> next == FlightStatus.ACTIVE;
@@ -204,19 +264,32 @@ public class UtmService {
             default -> false;
         };
         if (!valid) throw new IllegalArgumentException("Chuyển trạng thái không hợp lệ");
-        if (next == FlightStatus.APPROVED || next == FlightStatus.ACTIVE) { live(flight.getDrone()); live(flight.getOperator()); }
+        if (next == FlightStatus.APPROVED || next == FlightStatus.ACTIVE) {
+            live(flight.getDrone()); live(flight.getOperator());
+            if (flight.getOperator().isLocked()) throw new IllegalArgumentException("Người vận hành đang bị khóa");
+            if (!flight.getEndTime().isAfter(Instant.now()) || (next == FlightStatus.APPROVED && !flight.getStartTime().isAfter(Instant.now())))
+                throw new IllegalArgumentException("Kế hoạch đã quá thời gian phê duyệt/kích hoạt");
+        }
+        if (next == FlightStatus.APPROVED || next == FlightStatus.REJECTED) {
+            flight.setReviewedAt(Instant.now()); flight.setReviewedBy(actor.getId());
+            flight.setReviewNote(trimToNull(reviewNote));
+        }
         flight.setStatus(next); flight.recordActor(actor.getId()); log(actor, "FLIGHT_STATUS", id + ":" + next);
+        if (next == FlightStatus.APPROVED) integration.publish(flight, "flightplan.accepted");
+        else if (next == FlightStatus.ACTIVE || next == FlightStatus.COMPLETED) integration.publish(flight, "flightplan.status.changed");
         return flight;
     }
 
     public FlightPlan cancel(UUID id, UserAccount actor) {
         auth.requireOperator(actor);
-        FlightPlan flight = live(flight(id, actor));
+        FlightPlan flight = editableFlight(id, actor);
         if (!flight.getOperator().getId().equals(actor.getId())) auth.deny();
         if (!flight.getStartTime().isAfter(Instant.now())
                 || !Set.of(FlightStatus.PENDING, FlightStatus.APPROVED).contains(flight.getStatus()))
             throw new IllegalArgumentException("Chỉ hủy kế hoạch chờ duyệt/đã duyệt trước cất cánh");
+        boolean wasApproved = flight.getStatus() == FlightStatus.APPROVED;
         flight.setStatus(FlightStatus.CANCELLED); flight.recordActor(actor.getId()); log(actor, "FLIGHT_CANCEL", id.toString());
+        if (wasApproved) integration.publish(flight, "flightplan.cancelled");
         return flight;
     }
 

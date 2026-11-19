@@ -17,7 +17,15 @@ public record FlightPlanResponse(
         Instant startTime,
         Instant endTime,
         String trajectoryJson,
-        FlightStatus status) {
+        FlightStatus status,
+        UUID submissionId,
+        int uavCount,
+        String departureName,
+        String destinationName,
+        String altitudeReference,
+        Instant reviewedAt,
+        UUID reviewedBy,
+        String reviewNote) {
     public static FlightPlanResponse from(FlightPlan entity) {
         if (entity == null) return null;
         return new FlightPlanResponse(
@@ -34,6 +42,8 @@ public record FlightPlanResponse(
                 entity.getStartTime(),
                 entity.getEndTime(),
                 entity.getTrajectoryJson(),
-                entity.getStatus());
+                entity.getStatus(), entity.getSubmissionId(), entity.getUavCount(),
+                entity.getDepartureName(), entity.getDestinationName(), entity.getAltitudeReference(),
+                entity.getReviewedAt(), entity.getReviewedBy(), entity.getReviewNote());
     }
 }

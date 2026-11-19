@@ -7,20 +7,28 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.*;
 import vn.utm.model.*;
 import vn.utm.repository.*;
 import vn.utm.service.AuthService;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties = {"spring.datasource.url=jdbc:h2:mem:utm-v2-test;DB_CLOSE_DELAY=-1",
-        "spring.jpa.hibernate.ddl-auto=create-drop", "logging.level.root=WARN", "debug=false"})
+        "spring.config.import=", "spring.datasource.driver-class-name=org.h2.Driver",
+        "spring.datasource.username=sa", "spring.datasource.password=",
+        "spring.jpa.hibernate.ddl-auto=create-drop", "utm.integration.mode=mock",
+        "utm.bootstrap.username=", "utm.bootstrap.password=",
+        "logging.level.root=WARN", "debug=false"})
+@ActiveProfiles("test")
 @AutoConfigureMockMvc
 class UtmApplicationTests {
+    private static final ZoneId WEB_TIME_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @Autowired UserAccountRepository users;
@@ -55,15 +63,25 @@ class UtmApplicationTests {
     }
 
     private String createDrone(Account account) throws Exception {
+        return createDrone(account, "MULTIROTOR");
+    }
+
+    private String createLegacyDrone(Account account) throws Exception {
+        return createDrone(account, null);
+    }
+
+    private String createDrone(Account account, String type) throws Exception {
+        Map<String, Object> request = new HashMap<>(Map.of("serialNumber", "RID-" + UUID.randomUUID(),
+                "model", "UAV Việt Nam", "maxFlightTime", 45, "maxSpeed", 20));
+        if (type != null) request.put("droneType", type);
         MvcResult result = mvc.perform(post("/api/drones").session(account.session).contentType(MediaType.APPLICATION_JSON)
-                .content(mapper.writeValueAsString(Map.of("serialNumber", "RID-" + UUID.randomUUID(), "model", "UAV Việt Nam",
-                        "maxFlightTime", 45, "maxSpeed", 20))))
+                .content(mapper.writeValueAsString(request)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.owner.passwordHash").doesNotExist()).andReturn();
         return mapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
     }
 
     private Map<String, Object> plan(String droneId) throws Exception {
-        LocalDateTime start = LocalDateTime.now().plusDays(1).withNano(0), end = start.plusMinutes(20);
+        LocalDateTime start = LocalDateTime.now(WEB_TIME_ZONE).plusDays(1).withNano(0), end = start.plusMinutes(20);
         return Map.of("droneId", droneId, "startTime", start.toString(), "endTime", end.toString(),
                 "trajectoryJson", mapper.writeValueAsString(List.of(
                         Map.of("latitude", 10.8, "longitude", 106.7, "altitude", 50, "time", start.toString()),
@@ -92,8 +110,25 @@ class UtmApplicationTests {
                     .content(mapper.writeValueAsString(request))).andExpect(status().isOk())
                     .andExpect(jsonPath("$.droneType").value(type));
         }
-        String legacy = createDrone(account);
+        String legacy = createLegacyDrone(account);
         assertNull(drones.findById(UUID.fromString(legacy)).orElseThrow().getDroneType());
+    }
+
+    @Test void legacyDroneMustDeclareTypeBeforeSubmittingPlan() throws Exception {
+        Account account = register(); String droneId = createLegacyDrone(account);
+        Map<String, Object> plan = plan(droneId);
+        mvc.perform(post("/api/flights").session(account.session).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(plan))).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/flights").session(account.session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+        Drone legacy = drones.findById(UUID.fromString(droneId)).orElseThrow();
+        assertNull(legacy.getDroneType());
+        mvc.perform(put("/api/drones/{id}", droneId).session(account.session).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("serialNumber", legacy.getSerialNumber(),
+                        "model", legacy.getModel(), "droneType", "MULTIROTOR",
+                        "maxFlightTime", legacy.getMaxFlightTime(), "maxSpeed", legacy.getMaxSpeed()))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.droneType").value("MULTIROTOR"));
+        submit(account, plan);
     }
 
     @Test void droneRejectsInvalidClassificationAndPerformance() throws Exception {
@@ -120,6 +155,7 @@ class UtmApplicationTests {
                 .andExpect(jsonPath("$.createdAt").value(org.hamcrest.Matchers.endsWith("Z")))
                 .andExpect(jsonPath("$.operator.passwordHash").doesNotExist());
         Map<String, Object> offset = new HashMap<>(legacy);
+        offset.put("droneId", createDrone(account));
         offset.put("startTime", legacy.get("startTime") + "+07:00");
         offset.put("endTime", vn.utm.common.UtcTime.parse((String) legacy.get("endTime")).toString());
         String second = submit(account, offset);
@@ -127,6 +163,17 @@ class UtmApplicationTests {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.startTime").value(expected));
         assertTrue(mapper.readTree(flights.findById(UUID.fromString(second)).orElseThrow().getTrajectoryJson())
                 .get(0).get("time").asText().endsWith("Z"));
+    }
+
+    @Test void rejectsOverlappingPlansForSameDrone() throws Exception {
+        Account account = register(); String droneId = createDrone(account);
+        Map<String, Object> request = plan(droneId);
+        String id = submit(account, request);
+        mvc.perform(post("/api/flights").session(account.session).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(request))).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/flights").session(account.session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(id));
     }
 
     @Test void rejectsInvalidOffsetAndPastInstant() throws Exception {
@@ -154,6 +201,8 @@ class UtmApplicationTests {
         mvc.perform(put("/api/flights/{id}/status", id).session(manager).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"status\":\"COMPLETED\"}")).andExpect(status().isBadRequest());
         mvc.perform(put("/api/flights/{id}/status", id).session(manager).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"APPROVED\"}")).andExpect(status().isForbidden());
+        mvc.perform(put("/api/flights/{id}/status", id).session(staff("ADMIN")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"status\":\"APPROVED\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("APPROVED"));
         mvc.perform(get("/api/flights/active-or-approved").session(manager)).andExpect(status().isOk()).andExpect(jsonPath("$.content").isNotEmpty());
         mvc.perform(delete("/api/drones/{id}", droneId).session(account.session)).andExpect(status().isBadRequest());
@@ -189,7 +238,7 @@ class UtmApplicationTests {
             mvc.perform(post("/api/flights").session(account.session).contentType(MediaType.APPLICATION_JSON)
                     .content(mapper.writeValueAsString(invalid))).andExpect(status().isBadRequest());
         }
-        invalid = new HashMap<>(plan(droneId)); invalid.put("endTime", LocalDateTime.now().plusDays(1).plusHours(5).toString());
+        invalid = new HashMap<>(plan(droneId)); invalid.put("endTime", LocalDateTime.now(WEB_TIME_ZONE).plusDays(1).plusHours(5).toString());
         mvc.perform(post("/api/flights").session(account.session).contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(invalid))).andExpect(status().isBadRequest());
         for (String query : List.of("size=0", "page=-1", "sort=password_hash,asc", "isActive=oops"))
@@ -203,7 +252,11 @@ class UtmApplicationTests {
         Account account = register();
         String id = submit(account, plan(createDrone(account)));
         MockHttpSession manager = staff("MANAGER");
-        for (String next : List.of("APPROVED", "ACTIVE", "COMPLETED")) {
+        mvc.perform(put("/api/flights/{id}/status", id).session(manager).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"APPROVED\"}")).andExpect(status().isForbidden());
+        mvc.perform(put("/api/flights/{id}/status", id).session(staff("ADMIN")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"APPROVED\"}")).andExpect(status().isOk());
+        for (String next : List.of("ACTIVE", "COMPLETED")) {
             mvc.perform(put("/api/flights/{id}/status", id).session(manager).contentType(MediaType.APPLICATION_JSON)
                     .content(mapper.writeValueAsString(Map.of("status", next))))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.status").value(next));
@@ -265,6 +318,8 @@ class UtmApplicationTests {
         mvc.perform(put("/api/flights/{id}/status", id).session(operator.session).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"status\":\"APPROVED\"}")).andExpect(status().isForbidden());
         mvc.perform(put("/api/flights/{id}/status", id).session(manager).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"APPROVED\"}")).andExpect(status().isForbidden());
+        mvc.perform(put("/api/flights/{id}/status", id).session(staff("ADMIN")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"status\":\"APPROVED\"}")).andExpect(status().isOk());
         mvc.perform(get("/api/flights?status=APPROVED").session(manager)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[*].status").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("APPROVED"))));

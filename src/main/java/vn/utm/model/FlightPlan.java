@@ -21,6 +21,36 @@ public class FlightPlan extends BaseEntity {
     private String trajectoryJson;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20)
     private FlightStatus status = FlightStatus.PENDING;
+    private java.util.UUID submissionId;
+    @Column(nullable = false)
+    private int uavCount = 1;
+    @Column(length = 255)
+    private String departureName;
+    @Column(length = 255)
+    private String destinationName;
+    @Column(nullable = false, length = 10)
+    private String altitudeReference = "AGL";
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.TIMESTAMP)
+    private Instant reviewedAt;
+    private java.util.UUID reviewedBy;
+    @Column(length = 1000)
+    private String reviewNote;
+    public java.util.UUID getSubmissionId() { return submissionId; }
+    public void setSubmissionId(java.util.UUID value) { submissionId = value; }
+    public int getUavCount() { return uavCount; }
+    public void setUavCount(int value) { uavCount = value; }
+    public String getDepartureName() { return departureName; }
+    public void setDepartureName(String value) { departureName = value; }
+    public String getDestinationName() { return destinationName; }
+    public void setDestinationName(String value) { destinationName = value; }
+    public String getAltitudeReference() { return altitudeReference; }
+    public void setAltitudeReference(String value) { altitudeReference = value; }
+    public Instant getReviewedAt() { return reviewedAt; }
+    public void setReviewedAt(Instant value) { reviewedAt = value; }
+    public java.util.UUID getReviewedBy() { return reviewedBy; }
+    public void setReviewedBy(java.util.UUID value) { reviewedBy = value; }
+    public String getReviewNote() { return reviewNote; }
+    public void setReviewNote(String value) { reviewNote = value; }
     public Drone getDrone() { return drone; }
     public void setDrone(Drone drone) { this.drone = drone; }
     public UserAccount getOperator() { return operator; }

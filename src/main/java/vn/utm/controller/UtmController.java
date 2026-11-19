@@ -164,7 +164,13 @@ public class UtmController {
 
     @PutMapping("/flights/{id}/status")
     public FlightPlanResponse flightStatus(@PathVariable UUID id, @Valid @RequestBody StatusRequest request, HttpSession session) {
-        return FlightPlanResponse.from(service.status(id, request.status(), auth.requireAccount(session)));
+        return FlightPlanResponse.from(service.status(id, request.status(), request.reviewNote(), auth.requireAccount(session)));
+    }
+
+    @PostMapping("/flights/batch")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<FlightPlanResponse> createFlightBatch(@Valid @RequestBody BatchFlightRequest request, HttpSession session) {
+        return service.createFlightBatch(request, auth.requireAccount(session)).stream().map(FlightPlanResponse::from).toList();
     }
 
     @PutMapping("/flights/{id}/cancel")

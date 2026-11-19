@@ -75,6 +75,14 @@ CREATE TABLE flight_plans (
     start_time TIMESTAMP(6) NOT NULL,
     end_time TIMESTAMP(6) NOT NULL,
     trajectory_json CLOB NOT NULL,
+    submission_id UUID NULL,
+    uav_count INT NOT NULL DEFAULT 1,
+    departure_name VARCHAR(255) NULL,
+    destination_name VARCHAR(255) NULL,
+    altitude_reference VARCHAR(10) NOT NULL DEFAULT 'AGL',
+    reviewed_at TIMESTAMP(6) NULL,
+    reviewed_by UUID NULL,
+    review_note VARCHAR(1000) NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     CONSTRAINT ck_flight_time CHECK (end_time > start_time),
     CONSTRAINT ck_flight_status CHECK (status IN ('PENDING','APPROVED','REJECTED','ACTIVE','COMPLETED','CANCELLED'))
@@ -93,6 +101,30 @@ CREATE TABLE system_logs (
     action_type VARCHAR(50) NOT NULL,
     details CLOB NULL
 );
+
+CREATE TABLE integration_deliveries (
+    id UUID NOT NULL PRIMARY KEY,
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    created_by UUID NULL,
+    updated_by UUID NULL,
+    deleted_at TIMESTAMP(6) NULL,
+    deleted_by UUID NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    flight_id UUID NOT NULL REFERENCES flight_plans(id),
+    target VARCHAR(20) NOT NULL,
+    event_type VARCHAR(80) NOT NULL,
+    flight_status VARCHAR(20) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    payload_json CLOB NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    last_attempt_at TIMESTAMP(6) NULL,
+    delivered_at TIMESTAMP(6) NULL,
+    last_error VARCHAR(1000) NULL,
+    receipt VARCHAR(1000) NULL,
+    CONSTRAINT ux_delivery_event UNIQUE (flight_id, target, event_type, flight_status)
+);
+CREATE INDEX ix_delivery_status ON integration_deliveries(status, created_at);
 
 CREATE INDEX ix_drones_owner ON drones(owner_id, is_active);
 CREATE UNIQUE INDEX ux_users_tax_code ON users(tax_code);

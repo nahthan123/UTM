@@ -75,6 +75,14 @@ CREATE TABLE dbo.flight_plans (
     start_time DATETIME2(6) NOT NULL,
     end_time DATETIME2(6) NOT NULL,
     trajectory_json NVARCHAR(MAX) NOT NULL,
+    submission_id UNIQUEIDENTIFIER NULL,
+    uav_count INT NOT NULL DEFAULT 1,
+    departure_name NVARCHAR(255) NULL,
+    destination_name NVARCHAR(255) NULL,
+    altitude_reference NVARCHAR(10) NOT NULL DEFAULT 'AGL',
+    reviewed_at DATETIME2(6) NULL,
+    reviewed_by UNIQUEIDENTIFIER NULL,
+    review_note NVARCHAR(1000) NULL,
     status NVARCHAR(20) NOT NULL DEFAULT 'PENDING',
     CONSTRAINT ck_flight_time CHECK (end_time > start_time),
     CONSTRAINT ck_flight_status CHECK (status IN ('PENDING','APPROVED','REJECTED','ACTIVE','COMPLETED','CANCELLED'))
@@ -93,6 +101,30 @@ CREATE TABLE dbo.system_logs (
     action_type NVARCHAR(50) NOT NULL,
     details NVARCHAR(MAX) NULL
 );
+
+CREATE TABLE dbo.integration_deliveries (
+    id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+    created_at DATETIME2(6) NOT NULL,
+    updated_at DATETIME2(6) NOT NULL,
+    created_by UNIQUEIDENTIFIER NULL,
+    updated_by UNIQUEIDENTIFIER NULL,
+    deleted_at DATETIME2(6) NULL,
+    deleted_by UNIQUEIDENTIFIER NULL,
+    is_active BIT NOT NULL DEFAULT 1,
+    flight_id UNIQUEIDENTIFIER NOT NULL REFERENCES dbo.flight_plans(id),
+    target NVARCHAR(20) NOT NULL,
+    event_type NVARCHAR(80) NOT NULL,
+    flight_status NVARCHAR(20) NOT NULL,
+    status NVARCHAR(30) NOT NULL,
+    payload_json NVARCHAR(MAX) NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    last_attempt_at DATETIME2(6) NULL,
+    delivered_at DATETIME2(6) NULL,
+    last_error NVARCHAR(1000) NULL,
+    receipt NVARCHAR(1000) NULL,
+    CONSTRAINT ux_delivery_event UNIQUE (flight_id, target, event_type, flight_status)
+);
+CREATE INDEX ix_delivery_status ON dbo.integration_deliveries(status, created_at);
 
 CREATE INDEX ix_drones_owner ON dbo.drones(owner_id, is_active);
 CREATE UNIQUE INDEX ux_users_tax_code ON dbo.users(tax_code) WHERE tax_code IS NOT NULL;

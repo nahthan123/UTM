@@ -89,6 +89,7 @@
       <button class="nav-item" data-tab="users" data-staff hidden>♙ Người dùng</button>
       <button class="nav-item" data-tab="roles" data-admin hidden>◇ Vai trò</button>
       <button class="nav-item" data-tab="logs" data-staff hidden>≡ Nhật ký</button>
+      <button class="nav-item" data-tab="integrations" data-staff hidden>⇄ Tích hợp</button>
     </nav>
     <div class="portal-account"><b id="identity"></b><small id="roleName"></small><button id="logout">Đăng xuất</button></div>
   </aside>
@@ -102,11 +103,12 @@
         <form id="droneForm"><input name="id" type="hidden">
           <div class="portal-grid">
             <label>Số sê-ri UAV<input name="serialNumber" maxlength="100" required placeholder="Nhập số trên thiết bị / hồ sơ nhà sản xuất"><small>ID hệ thống được tạo tự động.</small></label>
-            <label>Loại UAV<select name="droneType" required><option value="">Chọn loại UAV</option><option value="MULTIROTOR">Đa cánh quạt</option><option value="FIXED_WING">Cánh bằng</option><option value="HYBRID">Hybrid (lai)</option></select></label>
+            <label>Loại UAV<select name="droneType" required><option value="">Chọn loại UAV</option><option value="MULTIROTOR">Multirotor · Đa cánh quạt</option><option value="FIXED_WING">Fixed-wing · Cánh bằng</option><option value="HYBRID">Hybrid VTOL · Lai VTOL</option></select></label>
             <label>Model / tên mẫu UAV<input name="model" maxlength="100" required placeholder="Ví dụ: DJI Matrice 350 RTK"></label>
             <label>Thời gian bay tối đa (phút)<input name="maxFlightTime" type="number" min="1" step="1" required placeholder="Ví dụ: 45"><small>Theo thông số kỹ thuật, nhập số phút nguyên lớn hơn 0.</small></label>
             <label>Tốc độ tối đa (m/s)<input name="maxSpeed" type="number" min="0" step="any" required placeholder="Ví dụ: 15.5"><small>Theo thông số kỹ thuật, lớn hơn 0. Đổi km/h sang m/s: chia cho 3,6.</small></label>
           </div>
+          <div class="preset-tools"><button type="button" id="dronePreset">Điền thông số mô phỏng theo loại UAV</button><small class="muted">Chỉ điền ô còn trống. Đây là tham số giả lập của đề tài.</small></div>
           <div class="portal-actions"><button class="primary">Lưu phương tiện</button><button type="button" id="droneReset" data-reset="droneForm">Nhập mới</button></div>
         </form>
       </div>
@@ -114,19 +116,22 @@
     <section id="flightsPanel" hidden>
       <div class="portal-card" id="flightSubmitCard" data-operator><h2>Nộp kế hoạch bay</h2>
         <form id="flightForm">
-          <label>Phương tiện của bạn<select name="droneId" id="droneSelect" required><option value="">Chọn phương tiện</option></select></label>
+          <label>Chọn UAV tham gia<select name="droneIds" id="droneSelect" multiple size="5" required aria-describedby="droneSelectionHelp"></select><small id="droneSelectionHelp">Giữ Ctrl/Command để chọn nhiều UAV, tối đa 50 UAV mỗi đợt gửi. Mỗi UAV có một kế hoạch được duyệt riêng trong cùng đợt gửi.</small></label>
+          <p class="selection-count" id="uavCount" aria-live="polite">Đã chọn 0 UAV</p>
           <div class="portal-grid">
+            <label>Điểm đi<input name="departureName" maxlength="255" required placeholder="Ví dụ: Bãi đáp A, Đà Nẵng"></label>
+            <label>Điểm đến<input name="destinationName" maxlength="255" required placeholder="Ví dụ: Bãi đáp B, Đà Nẵng"></label>
             <label>Cất cánh dự kiến (UTC+7)<input name="startTime" type="datetime-local" required></label>
             <label>Hạ cánh dự kiến (UTC+7)<input name="endTime" type="datetime-local" required></label>
           </div>
-          <div><h3>Quỹ đạo 4D</h3><p class="muted">Mỗi điểm gồm vĩ độ, kinh độ, độ cao (m) và thời gian. Cần ít nhất 2 điểm với thời gian tăng dần trong khoảng bay.</p><div id="waypoints"></div><button id="addWaypoint" type="button">+ Thêm waypoint</button></div>
+          <div><h3>Lộ trình 4D</h3><p class="muted">Waypoint đầu là điểm đi, waypoint cuối là điểm đến; thời gian phải khớp giờ cất/hạ cánh. Độ cao 0–120 m so với mặt đất (AGL), theo cấu hình mô phỏng đề tài. Các UAV cùng đợt gửi dùng lộ trình này; việc kiểm tra xung đột giữa UAV sẽ do khối lập kế hoạch đảm nhiệm.</p><div id="waypoints"></div><button id="addWaypoint" type="button">+ Thêm waypoint</button></div>
           <div class="portal-actions"><button class="primary">Nộp kế hoạch chờ duyệt</button></div>
         </form>
       </div>
       <div class="portal-card" id="flightReviewCard" data-staff hidden>
         <h2>Hàng chờ duyệt kế hoạch</h2>
-        <p class="muted">Kiểm tra người vận hành, UAV, thời gian và quỹ đạo 4D trong danh sách bên dưới trước khi duyệt hoặc từ chối. Mặc định chỉ hiển thị kế hoạch chờ duyệt.</p>
-        <p class="muted">Tài khoản quản lý không nộp hoặc hủy kế hoạch thay người vận hành. Sau khi duyệt, có thể chuyển sang Đang bay và Hoàn thành.</p>
+        <p class="muted">Kiểm tra người vận hành, UAV, thời gian và quỹ đạo 4D trong danh sách bên dưới trước khi duyệt hoặc từ chối. Mặc định chỉ hiển thị kế hoạch chờ duyệt. Chưa kiểm tra xung đột tự động.</p>
+        <p class="muted">ADMIN duyệt hoặc từ chối từng kế hoạch, có thể gửi ghi chú cho người vận hành. MANAGER theo dõi và cập nhật Đang bay / Hoàn thành. Kế hoạch được duyệt sẽ gửi đến hai đầu nhận mô phỏng và giám sát. Chế độ MOCK chỉ xác nhận nhận dữ liệu, không chạy chuyến bay hoặc kiểm tra xung đột.</p>
       </div>
     </section>
     <section id="usersPanel" hidden>
@@ -159,6 +164,9 @@
     <section id="logsPanel" hidden>
       <div class="portal-card"><h2>Nhật ký hệ thống</h2><p class="muted">Tra cứu thao tác của người dùng và các thay đổi trong hệ thống.</p><button id="clearLogs" class="danger" data-admin>Xóa mềm nhật ký</button></div>
     </section>
+    <section id="integrationsPanel" hidden>
+      <div class="portal-card"><h2>Chuyển kế hoạch sang mô phỏng và giám sát</h2><p class="muted">Theo dõi tối đa 100 bản tin mới nhất theo bộ lọc và phản hồi từ từng đầu nhận. Phản hồi MOCK chỉ chứng minh đã tiếp nhận dữ liệu trong hệ thống giả lập, chưa xác nhận UAV đã bay. ADMIN có thể gửi lại bản tin lỗi hoặc đang chờ.</p></div>
+    </section>
     <div class="portal-card">
       <div class="portal-list-heading"><h2 id="listTitle">Phương tiện đã đăng ký</h2><button id="refresh">Làm mới</button></div>
       <div class="portal-toolbar">
@@ -166,6 +174,7 @@
         <select id="activeFilter" aria-label="Trạng thái bản ghi"><option value="true">Đang hiệu lực</option><option value="false">Đã xóa mềm / ngừng hiệu lực</option></select>
         <select id="lockedFilter" aria-label="Lọc khóa tài khoản" hidden><option value="">Tất cả tài khoản</option><option value="true">Đang khóa</option><option value="false">Không khóa</option></select>
         <select id="flightFilter" aria-label="Lọc kế hoạch bay" hidden><option value="">Tất cả kế hoạch</option><option value="PENDING">Chờ duyệt</option><option value="APPROVED">Đã duyệt</option><option value="ACTIVE">Đang bay</option><option value="COMPLETED">Hoàn thành</option><option value="REJECTED">Bị từ chối</option><option value="CANCELLED">Đã hủy</option><option value="approved">Đã duyệt / Đang bay</option></select>
+        <select id="integrationFilter" aria-label="Lọc trạng thái chuyển dữ liệu" hidden><option value="">Tất cả bản tin</option><option value="PENDING">Đang chờ</option><option value="MOCK_DELIVERED">Mock đã nhận</option><option value="FAILED">Lỗi chuyển dữ liệu</option></select>
         <select id="sortFilter" aria-label="Sắp xếp"><option value="created_at,desc">Mới tạo trước</option><option value="created_at,asc">Cũ tạo trước</option></select>
         <select id="sizeFilter" aria-label="Số bản ghi mỗi trang"><option value="10">10 bản ghi</option><option value="25">25 bản ghi</option><option value="50">50 bản ghi</option><option value="100">100 bản ghi</option></select>
         <button id="search">Tìm</button>
@@ -175,5 +184,9 @@
     </div>
   </main>
 </div>
+<dialog id="reviewDialog" class="portal-dialog" aria-labelledby="reviewTitle">
+  <form id="reviewForm"><h2 id="reviewTitle">Xét duyệt kế hoạch</h2><p id="reviewRoute"></p><label>Ghi chú gửi người vận hành<textarea name="reviewNote" rows="4" maxlength="1000" placeholder="Kết quả xem xét hoặc lý do từ chối"></textarea></label><p class="muted">Duyệt nội bộ phục vụ mô phỏng. Hệ thống chưa tự kiểm tra xung đột chiến lược.</p><div class="portal-actions"><button type="submit" class="primary">Xác nhận</button><button type="button" id="reviewClose">Quay lại</button></div></form>
+</dialog>
+<dialog id="deliveryDialog" class="portal-dialog wide-dialog" aria-labelledby="deliveryTitle"><h2 id="deliveryTitle">Trạng thái chuyển kế hoạch</h2><div id="deliveryContent"></div><div class="portal-actions"><button type="button" id="deliveryClose">Đóng</button></div></dialog>
 </body>
 </html>

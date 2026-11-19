@@ -1,135 +1,211 @@
 # SkyPermit UTM
 
-Xem [c?y th? m?c, ??i chi?u Excel v? h??ng d?n demo](docs/implementation.md). Ph?m vi hi?n t?i l? n?m b?ng UTM ch?nh; m? ph?ng v? k?t n?i ph?n m?m ngo?i l? ??t t?ch h?p ri?ng.
+Website quản lý người vận hành, UAV và kế hoạch bay 4D phục vụ đề tài UTM.
+Hướng dẫn này dùng **SQL Server chạy bên ngoài ứng dụng**, quản lý database bằng
+**SQL Server Management Studio (SSMS)** và cấu hình trong file `.properties`.
+Không cần tạo file `.env` hoặc thiết lập biến môi trường.
 
-Cổng Spring Boot đăng ký người vận hành, hồ sơ UAV và kế hoạch bay 4D. Cấu trúc giữ theo bản Git `58a662c`: `controller`, `dto/request`, `dto/response`, `model`, `repository`, `service`, `common/enums`, `exception`.
+## 1. Chuẩn bị
 
-Thiết kế tham chiếu: [Phân tích các bảng dữ liệu UTM](<../Phân tích các bảng dữ liệu_UTM.xlsx>), phần 5 bảng chính. Các sheet mẫu sinh viên và phân quyền mở rộng không thuộc phạm vi bản này.
+- JDK 21 trở lên, lệnh `java -version` nhận đúng Java đã cài.
+- SQL Server Database Engine, ví dụ instance `SQLEXPRESS` trên máy cá nhân.
+- SSMS để tạo database, chạy script SQL và xem dữ liệu.
+- SQL Server đã bật TCP/IP và cho phép tài khoản SQL Authentication đăng nhập.
 
-## Mô hình dữ liệu
+SSMS là công cụ quản trị. Dữ liệu được lưu trong SQL Server, không nằm trong
+file database H2 của dự án khi sử dụng profile `sqlserver`.
+Maven Wrapper đã có sẵn, không cần cài Maven riêng.
 
-| Bảng | Entity | Liên kết |
-| --- | --- | --- |
-| `roles` | `Role` | Vai trò ADMIN, MANAGER, OPERATOR và vai trò tùy chỉnh |
-| `users` | `UserAccount` | Một người dùng có một `role_id`, hỗ trợ tài khoản cá nhân và doanh nghiệp |
-| `drones` | `Drone` | `owner_id` trỏ tới người dùng |
-| `flight_plans` | `FlightPlan` | `drone_id` và `operator_id` |
-| `system_logs` | `SystemLog` | `user_id` có thể null nếu do hệ thống |
+## 2. Tạo database bằng SSMS
 
-Khóa chính/FK dùng UUID (`UNIQUEIDENTIFIER` trên SQL Server). `BaseEntity` là lớp dùng chung, không tạo thêm bảng: `created_at`, `updated_at`, `created_by`, `updated_by`, `deleted_at`, `deleted_by`, `is_active`.
+Mở SSMS, kết nối đến SQL Server:
 
-`trajectory_json` và `details` là chuỗi text Unicode, ánh xạ thành `NVARCHAR(MAX)` trên SQL Server. Không dùng cột JSON. Thời gian bay dùng `DATETIME2`, trạng thái dùng chuỗi enum. `users` bổ sung `is_locked` và `login_fail_count` để đáp ứng endpoint khóa/mở khóa trong Excel. `action_type` dùng mã chuỗi vì tài liệu chưa liệt kê các giá trị enum cụ thể.
-
-Model cũ `company_profiles`, `user_accounts`, `flight_requests` và API công ty/mô phỏng đã được thay bằng mô hình mới. Bản này không tự di chuyển dữ liệu cũ. H2 dùng file mới `data/utm-v2-db`; file `data/utm-flight-db` cũ được giữ nguyên.
-
-## Chạy cục bộ
-
-Cần Java 21 trở lên. Maven Wrapper có sẵn:
-
-```powershell
-.\mvnw.cmd spring-boot:run
-```
-
-Mở `http://localhost:8080`. Mặc định dùng H2 để chạy thử, không cần cấu hình SQL Server.
-
-Đăng ký tài khoản mới nhận vai trò OPERATOR, đăng nhập bằng **username**. Web hỗ trợ quản lý drone, nhập/xóa waypoint, nộp/hủy kế hoạch, xem quỹ đạo và phân trang. ADMIN có giao diện quản lý người dùng/vai trò và nhật ký; MANAGER có thể xem người dùng, nhật ký và duyệt kế hoạch.
-
-Form đăng ký có hai lựa chọn Cá nhân và Doanh nghiệp. Cá nhân cần họ tên. Doanh nghiệp cần tên công ty, mã số thuế, người đại diện và địa chỉ, có thể nhập thêm giấy phép khai thác. Thông tin liên hệ và tài khoản đăng nhập dùng chung cho hai loại. Thông tin doanh nghiệp lưu trong `users` qua `account_type`, `company_name`, `tax_code`, `representative`, `address`, `license_number`. `national_id` là trường tùy chọn cho cá nhân. Mã số thuế đã đăng ký được giữ duy nhất, kể cả với tài khoản xóa mềm.
-
-Để tạo ADMIN đầu tiên, đặt hai biến môi trường trước khi chạy. Không có tài khoản hay mật khẩu quản trị mặc định:
-
-```powershell
-$env:UTM_BOOTSTRAP_USERNAME = 'admin'
-$env:UTM_BOOTSTRAP_PASSWORD = '<mat-khau-rieng-tu-12-ky-tu>'
-.\mvnw.cmd spring-boot:run
-```
-
-Bootstrap chỉ tạo nếu username chưa tồn tại, không ghi đè tài khoản hiện có. Bỏ hai biến sau lần khởi tạo. Mật khẩu băm BCrypt, giới hạn 72 byte UTF-8. Sai mật khẩu 5 lần sẽ khóa tài khoản; ADMIN mở khóa và reset bộ đếm. Cookie phiên HttpOnly, SameSite=Lax. Tài khoản bị khóa/xóa mềm hoặc có role ngừng hiệu lực sẽ không sử dụng được phiên cũ.
-
-## SQL Server
-
-1. Tạo database rỗng, ví dụ `utm`.
-2. Chạy một lần [db/sqlserver-schema.sql](src/main/resources/db/sqlserver-schema.sql) trong database đó.
-3. Cấu hình kết nối rồi chạy profile `sqlserver`:
-
-```powershell
-$env:SPRING_PROFILES_ACTIVE = 'sqlserver'
-$env:UTM_DB_URL = 'jdbc:sqlserver://localhost:1433;databaseName=utm;encrypt=true;trustServerCertificate=false'
-$env:UTM_DB_USERNAME = '<database-user>'
-$env:UTM_DB_PASSWORD = '<database-password>'
-.\mvnw.cmd spring-boot:run
-```
-
-Profile SQL Server dùng `ddl-auto=validate` để kiểm tra schema, không tự sửa bảng đang có. Kết nối mặc định yêu cầu chứng chỉ máy chủ hợp lệ; môi trường thử nghiệm dùng chứng chỉ tự ký có thể đặt `trustServerCertificate=true` trong URL riêng của môi trường đó. Script tạo bảng mới không phải migration cho DB cũ. Driver JDBC đã được khai báo trong `pom.xml`.
-
-Nếu đã tạo schema 5 bảng trước khi bổ sung đăng ký doanh nghiệp, chạy [sqlserver-business-registration.sql](src/main/resources/db/sqlserver-business-registration.sql) trước khi khởi động bản mới. Script thêm các cột hồ sơ và chỉ mục mã số thuế, gán loại INDIVIDUAL cho tài khoản hiện có. Với H2 mặc định, Hibernate cập nhật thêm cột khi khởi động.
-
-## API
-
-Mọi endpoint nghiệp vụ yêu cầu cookie phiên từ `/api/auth/login` hoặc `/api/auth/register`. Request và response dùng camelCase; tên cột SQL dùng snake_case. Danh sách trả về:
-
-```json
-{"content":[],"page":0,"size":10,"totalElements":0,"totalPages":0}
-```
-
-Hỗ trợ `page=0`, `size=10` (1–100), `sort=created_at,asc`; mặc định mới nhất trước. Nhận cả tên trường camelCase tương ứng. `isActive=true` là mặc định; `isActive=false` lấy bản ghi ngừng hiệu lực/xóa mềm. Không trả `passwordHash`, kể cả trong người dùng lồng trong drone/flight/log.
-
-| Nhóm | Endpoint |
+| Mục | Ví dụ |
 | --- | --- |
-| Xác thực | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout` |
-| Người dùng | `GET/POST /api/users`, `GET/PUT/DELETE /api/users/{id}` |
-| Tìm/lọc người dùng | `GET /api/users?keyword=...&isActive=true&isLocked=false` |
-| Khóa/mở khóa | `PUT /api/users/{id}/lock`, `PUT /api/users/{id}/unlock` |
-| Vai trò | `GET/POST /api/roles`, `GET/PUT/DELETE /api/roles/{id}`, `PUT /api/roles/{id}/restore` |
-| Drone | `GET/POST /api/drones`, `GET/PUT/DELETE /api/drones/{id}`, `PUT /api/drones/{id}/restore` |
-| Tra cứu drone | `GET /api/drones/owner/{ownerId}`, `GET /api/drones/search?serialNumber=...` |
-| Kế hoạch bay | `GET/POST /api/flights`, `GET /api/flights/{id}` |
-| Trạng thái/hủy/khôi phục | `PUT /api/flights/{id}/status`, `PUT /api/flights/{id}/cancel`, `PUT /api/flights/{id}/restore` |
-| Tra cứu kế hoạch | `GET /api/flights/operator/{operatorId}`, `GET /api/flights/active-or-approved` |
-| Nhật ký | `GET /api/logs`, `GET /api/logs/{id}`, `GET /api/logs/user/{userId}`, `GET /api/logs/action?type=...`, `DELETE /api/logs/clear` |
+| Server type | Database Engine |
+| Server name | `.\SQLEXPRESS` hoặc `localhost\SQLEXPRESS` |
+| Authentication | SQL Server Authentication, hoặc Windows Authentication để quản trị |
+| Database của ứng dụng | `utm` |
 
-Quyền truy cập:
+Với lần cài đặt mới, mở **New Query** và tạo database:
 
-- OPERATOR chỉ xem/sửa drone và xem/hủy kế hoạch của mình. `ownerId` khi tạo drone có thể bỏ trống để dùng tài khoản đăng nhập. Khi sửa drone mà bỏ `ownerId`, chủ sở hữu được giữ nguyên.
-- ADMIN/MANAGER xem toàn bộ drone/kế hoạch, cập nhật trạng thái, khôi phục kế hoạch và xem người dùng/nhật ký.
-- ADMIN quản lý người dùng/vai trò, khóa/mở khóa, xóa mềm nhật ký. Không tự xóa/khóa/hạ quyền tài khoản đang dùng; không xóa vai trò hệ thống.
-- Danh mục vai trò tùy chỉnh chỉ là dữ liệu; hiện các quyền nghiệp vụ dựa trên ba mã ADMIN/MANAGER/OPERATOR. Chưa triển khai bảng permissions ở sheet mở rộng.
-
-Xóa mềm giữ dữ liệu và UUID; username, email, serial number, role code đã dùng vẫn được giữ duy nhất. Drone có kế hoạch chưa kết thúc không được xóa hoặc chuyển chủ. Các thay đổi nghiệp vụ tạo nhật ký cùng transaction; xóa nhật ký cũng là xóa mềm và để lại bản ghi `LOG_CLEAR`.
-
-### Đăng ký và nộp quỹ đạo
-
-`POST /api/auth/register`:
-
-```json
-{
-  "username":"vuong.operator",
-  "password":"<mat-khau-tu-8-ky-tu>",
-  "fullName":"Nguyễn Văn Vương",
-  "email":"vuong@example.vn",
-  "phone":"0901234567"
-}
+```sql
+CREATE DATABASE utm;
+GO
+USE utm;
+GO
 ```
 
-`POST /api/flights` nhận `trajectoryJson` là **chuỗi JSON**. Web chuyển các waypoint thành chuỗi này trước khi gửi:
+Chọn database `utm`, mở và chạy một lần file
+[sqlserver-schema.sql](src/main/resources/db/sqlserver-schema.sql).
+Script tạo các bảng nghiệp vụ, bảng bàn giao tích hợp và bảng đánh dấu migration.
+Tài khoản ứng dụng cấu hình ở bước tiếp theo phải có quyền truy cập database này.
+Tài khoản Windows dùng để mở SSMS không tự trở thành tài khoản JDBC của ứng dụng.
 
-```json
-{
-  "droneId":"<UUID drone của người đăng nhập>",
-  "startTime":"2027-01-01T09:00:00",
-  "endTime":"2027-01-01T09:20:00",
-  "trajectoryJson":"[{\"latitude\":10.8,\"longitude\":106.7,\"altitude\":60,\"time\":\"2027-01-01T09:00:00\"},{\"latitude\":10.81,\"longitude\":106.71,\"altitude\":60,\"time\":\"2027-01-01T09:20:00\"}]"
-}
+**Nếu database đã có dữ liệu:** không chạy lại script tạo schema mới. Bản hiện tại
+áp dụng các script bổ sung loại UAV và tích hợp trong lúc khởi động. Với database
+cũ chưa có các cột hồ sơ doanh nghiệp, xem thêm
+[sqlserver-business-registration.sql](src/main/resources/db/sqlserver-business-registration.sql).
+Quy trình nâng cấp và chuyển đổi giờ UTC được ghi trong
+[tài liệu tích hợp](docs/integration.md).
+
+## 3. Cấu hình bằng file properties
+
+Tạo hoặc cập nhật `application-local.properties` tại thư mục gốc dự án,
+cùng cấp với `pom.xml` và `mvnw.cmd`:
+
+```properties
+spring.profiles.active=sqlserver
+
+UTM_DB_URL=jdbc:sqlserver://localhost;instanceName=SQLEXPRESS;databaseName=utm;encrypt=true;trustServerCertificate=true
+UTM_DB_USERNAME=ten_dang_nhap_sql
+UTM_DB_PASSWORD=mat_khau_sql_cua_ban
+
+utm.integration.mode=mock
 ```
 
-Thời gian response dùng ISO UTC có Z. Request có offset được chuẩn hóa UTC; request không offset luôn coi là UTC+7. Web nhập và hiển thị UTC+7. Xem [quy ước và migration một lần](docs/integration.md). Thời gian cất/hạ cánh phải ở tương lai; hạ cánh sau cất cánh, thời lượng không vượt khả năng drone. Quỹ đạo có 2–10000 điểm, latitude ±90, longitude ±180, altitude không âm, thời gian tăng dần và nằm trong khoảng bay. Cấu trúc waypoint là quy ước API của bản này vì Excel chỉ mô tả chung “mảng 4D Waypoints”.
+Thay tên đăng nhập và mật khẩu bằng tài khoản SQL Server của bạn.
+Các khóa `UTM_DB_URL`, `UTM_DB_USERNAME`, `UTM_DB_PASSWORD` ở trên là **thuộc tính
+đọc từ file**, được profile SQL Server sử dụng; không phải thao tác khai báo biến
+môi trường. File này đã được loại khỏi Git qua `.gitignore`.
 
-Trạng thái: `PENDING → APPROVED → ACTIVE → COMPLETED`, hoặc `PENDING → REJECTED`. `PUT .../status` nhận `{"status":"APPROVED"}`. Người vận hành hủy PENDING/APPROVED trước giờ cất cánh bằng endpoint cancel; kết quả CANCELLED. Khôi phục kế hoạch chỉ bỏ trạng thái xóa mềm, không đổi trạng thái phê duyệt. Tài liệu không định nghĩa endpoint xóa kế hoạch nên không thêm API xóa mới.
+Tên server `.\SQLEXPRESS` trong SSMS tương ứng với `localhost` và
+`instanceName=SQLEXPRESS` trong JDBC URL. Không nhập nguyên `.\SQLEXPRESS` vào
+vị trí tên host trong URL mẫu. `trustServerCertificate=true` trong ví dụ dùng
+cho SQL Server cục bộ với chứng chỉ tự ký.
 
-## Kiểm thử
+Nếu SQL Server dùng cổng TCP cố định, có thể thay riêng dòng URL bằng:
+
+```properties
+UTM_DB_URL=jdbc:sqlserver://localhost:1433;databaseName=utm;encrypt=true;trustServerCertificate=true
+```
+
+Thay `1433` bằng cổng thực tế của SQL Server. Khi kết nối theo tên instance,
+cần SQL Server Browser hoạt động hoặc chuyển sang URL dùng cổng TCP cố định.
+
+## 4. Tạo ADMIN đầu tiên
+
+Thêm tạm hai dòng sau vào cùng file `application-local.properties`:
+
+```properties
+utm.bootstrap.username=admin
+utm.bootstrap.password=thay_bang_mat_khau_rieng_tu_12_ky_tu
+```
+
+Sau lần khởi động tạo ADMIN thành công, xóa hai dòng bootstrap này khỏi file.
+Không có tài khoản quản trị mặc định. Bootstrap chỉ tạo username chưa tồn tại,
+không đổi mật khẩu hoặc vai trò của tài khoản đã có. Vì vậy, chọn username chưa
+đăng ký nếu cần khởi tạo ADMIN mới.
+
+## 5. Chạy trên Windows
+
+Mở PowerShell tại thư mục gốc dự án rồi chạy:
 
 ```powershell
-.\mvnw.cmd clean test
+.\mvnw.cmd spring-boot:run
 ```
 
-Kiểm thử tích hợp dùng H2 trong bộ nhớ, bao phủ UUID, tài khoản OPERATOR, quyền sở hữu, lưu nguyên chuỗi quỹ đạo, phê duyệt/hủy, xóa mềm/khôi phục, validation, phân trang, khóa/mở khóa và nhật ký. SQL Server cần kiểm tra kết nối/schema trên máy chủ đích trước khi dùng dữ liệu thật.
+Truy cập **http://localhost:8080**. Dừng ứng dụng bằng `Ctrl+C`.
+Không cần chạy database bằng Maven; SQL Server là dịch vụ riêng và phải hoạt động
+trước khi khởi động website. Có thể mở SSMS đồng thời để xem các bảng trong `utm`.
+
+Ứng dụng đọc `application-local.properties` theo thư mục đang chạy. Nếu mở bằng
+IDE, đặt working directory về thư mục gốc dự án. Thiếu cấu hình profile `sqlserver`
+thì cấu hình nền vẫn có thể dùng H2; để làm việc với database trong SSMS, giữ dòng
+`spring.profiles.active=sqlserver` như ví dụ.
+
+Profile SQL Server dùng `ddl-auto=validate`. Bộ khởi tạo riêng của dự án vẫn chạy
+migration bổ sung trước bước validate; tài khoản khởi động cần quyền ALTER/CREATE
+cho những thay đổi này hoặc quản trị viên áp dụng script trước.
+
+## 6. Chức năng và phân quyền
+
+| Vai trò | Chức năng |
+| --- | --- |
+| OPERATOR | Đăng ký cá nhân/doanh nghiệp, quản lý UAV của mình, nộp/hủy kế hoạch, xem kết quả và tải lộ trình đã duyệt |
+| MANAGER | Xem dữ liệu toàn hệ thống, theo dõi kế hoạch, cập nhật Đang bay/Hoàn thành, xem nhật ký và tích hợp |
+| ADMIN | Các quyền quản lý; duyệt/từ chối kế hoạch, quản lý người dùng/vai trò, khóa/mở khóa và gửi lại bản tin tích hợp |
+
+Đăng ký công khai luôn nhận OPERATOR. ADMIN tạo hoặc gán MANAGER và các vai trò
+khác trong trang Người dùng. Vai trò tùy chỉnh hiện là danh mục, chưa có cơ chế
+cấp quyền nghiệp vụ động.
+
+Luồng sử dụng:
+
+1. Đăng ký hoặc đăng nhập bằng username.
+2. Khai báo UAV: Multirotor, Fixed-wing hoặc Hybrid VTOL; nhập thông số phương tiện.
+3. Chọn UAV, nhập điểm đi/đến, giờ cất/hạ cánh và các waypoint 4D.
+4. Gửi kế hoạch để ADMIN duyệt hoặc từ chối kèm ghi chú.
+5. User xem kết quả và tải JSON lộ trình đã duyệt; hệ thống tạo bản tin bàn giao.
+
+Một đợt gửi có tối đa **50 UAV**, mỗi UAV một kế hoạch và được duyệt riêng, dùng
+chung mã đợt `submissionId`. Độ cao kế hoạch mới từ **0–120 m AGL**, là tham số
+mô phỏng của đề tài. Thời gian waypoint đầu/cuối phải khớp giờ cất/hạ cánh, thời
+lượng không vượt khả năng UAV. Không cho một UAV có hai kế hoạch đang mở trùng giờ.
+
+Trạng thái chính: `PENDING → APPROVED → ACTIVE → COMPLETED`.
+Có nhánh `PENDING → REJECTED`; operator có thể hủy PENDING/APPROVED trước cất cánh.
+Giờ nhập/hiển thị trên web là UTC+7; API trả UTC. Kế hoạch cũ giữ mốc độ cao AMSL.
+
+## 7. Chuẩn bị tích hợp mock
+
+Chọn chế độ ngay trong `application-local.properties`:
+
+```properties
+utm.integration.mode=mock
+```
+
+- `mock`: lưu bản tin cho hai đích SIMULATION/MONITORING và phản hồi `MOCK_DELIVERED`.
+- `disabled`: lưu bản tin PENDING, chưa tiếp nhận giả lập.
+
+Sau khi đổi cấu hình, khởi động lại ứng dụng. Tab **Tích hợp** cho phép
+ADMIN/MANAGER xem bản tin; ADMIN có thể gửi lại bản tin đang chờ hoặc bị lỗi.
+
+Các sự kiện gồm `flightplan.accepted`, `flightplan.cancelled` và
+`flightplan.status.changed`. Mock chỉ ghi nhận dữ liệu cục bộ, **chưa chạy
+SITL/Gazebo, giám sát CesiumJS hoặc kiểm tra xung đột không gian bằng AI**.
+
+## 8. Dữ liệu và API
+
+Các bảng nghiệp vụ: `roles`, `users`, `drones`, `flight_plans`, `system_logs`,
+`integration_deliveries`. Bảng `utm_migrations` ghi nhận migration.
+Khóa chính dùng UUID; thao tác xóa nghiệp vụ là xóa mềm.
+
+| Nhóm | API chính |
+| --- | --- |
+| Xác thực | `/api/auth/register`, `/api/auth/login`, `/api/auth/me`, `/api/auth/logout` |
+| Người dùng và vai trò | `/api/users`, `/api/roles` |
+| Phương tiện | `/api/drones` |
+| Kế hoạch | `/api/flights`, `POST /api/flights/batch` |
+| Xét duyệt | `PUT /api/flights/{id}/status` |
+| Lộ trình đã duyệt | `GET /api/flights/{id}/accepted-plan` |
+| Bàn giao | `GET /api/flights/{id}/integration`, `GET /api/integrations` |
+| Gửi lại bản tin | `POST /api/integrations/{id}/retry` |
+| Nhật ký | `/api/logs` |
+
+API nghiệp vụ yêu cầu cookie phiên đăng nhập và kiểm tra quyền trên server.
+Chi tiết payload, phân trang và luồng tích hợp nằm trong các tài liệu bên dưới.
+
+## 9. Tài liệu và trạng thái xác minh
+
+- [Phân quyền](docs/access-control.md).
+- [Tích hợp và nâng cấp database](docs/integration.md).
+- [JSON Schema bản tin](docs/contracts/flightplan-event.schema.json).
+- [Bản tin mẫu](docs/contracts/flightplan-accepted.example.json).
+- [Cấu trúc và hướng dẫn demo](docs/implementation.md).
+- [Những phần còn lại](docs/backlog.md).
+- Tài liệu gốc của đề tài: thư mục `23_10/`.
+- Nhật ký làm việc Word: thư mục `docs/work-logs/`.
+
+Chạy toàn bộ kiểm thử tại thư mục gốc:
+
+```powershell
+.\mvnw.cmd test
+```
+
+Test dùng H2 riêng, bỏ qua `application-local.properties` và không kết nối SQL
+Server đang dùng. Không cần đổi cấu hình database hoặc truyền profile qua lệnh.
+Kết quả ngày 19/11/2026 sau khi cập nhật test và sửa cách nạp migration SQL Server:
+**25 test đạt, 0 thất bại, 0 lỗi, 0 bỏ qua**. Hai test hồi quy kiểm tra cách gửi
+script SQL Server thành một batch và cách tách câu lệnh H2 bằng JDBC giả lập.
+Kết quả này chưa xác minh migration hoặc khởi động trên SQL Server thật.
