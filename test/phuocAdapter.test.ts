@@ -297,4 +297,137 @@ describe('PhuocTelemetryAdapter & ASTM F3411 Integration Suite', () => {
       expect(adapted.velocity.ground_speed_mps).toBe(12);
     }
   });
+
+  // Test 16: Hỗ trợ gói tin JSON phẳng PX4 / FastAPI 10Hz (ws://localhost:8000/ws/telemetry)
+  it('16. Chuyển đổi chuẩn xác gói tin JSON phẳng PX4/FastAPI (lat, lon, alt, rel_alt, mode)', () => {
+    const px4LivePacket = {
+      lat: 16.0544,
+      lon: 108.2022,
+      alt: 12.74,
+      rel_alt: 2.45,
+      heading: 89,
+      ground_speed: 0.02,
+      battery: 75,
+      mode: 'AUTO_HOLD',
+      in_air: true,
+    };
+
+    expect(ExternalTelemetryAdapter.isPhuocTelemetry(px4LivePacket)).toBe(true);
+    const analysis = ExternalTelemetryAdapter.analyzeAndAdapt(px4LivePacket);
+    expect(analysis.errors).toEqual([]);
+    expect(analysis.telemetry).toBeDefined();
+
+    const tel = analysis.telemetry!;
+    expect(tel.uav_id).toBe('UAV-PX4-01');
+    expect(tel.position.latitude).toBeCloseTo(16.0544, 5);
+    expect(tel.position.longitude).toBeCloseTo(108.2022, 5);
+    expect(tel.position.altitude_m).toBeCloseTo(2.45, 2);
+    expect(tel.position.altitude_reference).toBe('AGL');
+    expect(tel.velocity.heading_deg).toBe(89);
+    expect(tel.battery_pct).toBe(75);
+    expect(tel.status).toBe('HOVER');
+  });
+
+  // Test 17: Nhận diện chế độ cất cánh AUTO_TAKEOFF và độ cao MSL khi không có rel_alt
+  it('17. Nhận diện AUTO_TAKEOFF và bảo toàn MSL khi gói PX4 chỉ có alt', () => {
+    const px4Takeoff = {
+      drone_id: 'PX4-X500-02',
+      lat: 16.0544,
+      lon: 108.2022,
+      alt: 12.32,
+      heading: 89,
+      speed: 1.5,
+      mode: 'AUTO_TAKEOFF',
+    };
+
+    const analysis = ExternalTelemetryAdapter.analyzeAndAdapt(px4Takeoff);
+    expect(analysis.errors).toEqual([]);
+    expect(analysis.telemetry?.uav_id).toBe('PX4-X500-02');
+    expect(analysis.telemetry?.position.altitude_m).toBeCloseTo(12.32, 2);
+    expect(analysis.telemetry?.position.altitude_reference).toBe('MSL');
+    expect(analysis.telemetry?.status).toBe('TAKEOFF');
+  });
+
+  // Test 18: Khớp chuẩn 100% gói JSON thực tế từ server ws://localhost:8000/ws/telemetry của Phước
+  it('18. Chuyển đổi chuẩn xác 100% gói JSON thực tế (uav-1, position/velocity/attitude/battery/timestamps) từ ws://localhost:8000/ws/telemetry', () => {
+    const exactPhuocLivePacket = {
+      uav_id: 'uav-1',
+      system_id: 1,
+      status: {
+        connected: true,
+        armed: true,
+        flight_mode: 'AUTO_HOLD',
+        landed_state: 'IN_AIR',
+      },
+      position: {
+        latitude: 16.0544,
+        longitude: 108.2022,
+        altitude_msl_m: 12.78,
+        relative_altitude_m: 2.78,
+      },
+      local_position: {
+        x_m: 0.015,
+        y_m: -0.008,
+        z_m: -2.78,
+      },
+      velocity: {
+        vx_m_s: 0.05,
+        vy_m_s: 0.02,
+        vz_m_s: 0.0,
+        groundspeed_m_s: 0.05,
+        climb_rate_m_s: 0.0,
+      },
+      attitude: {
+        roll_deg: -0.02,
+        pitch_deg: 0.01,
+        yaw_deg: 90.54,
+        heading_deg: 90.0,
+      },
+      battery: {
+        voltage_v: 16.8,
+        remaining_percent: 98.5,
+      },
+      gps: {
+        fix_type: 3,
+        satellites: 10,
+      },
+      timestamps: {
+        source_timestamp_ms: 138204000,
+        backend_timestamp: '2026-11-18T16:19:30.123456Z',
+      },
+    };
+
+    expect(ExternalTelemetryAdapter.isPhuocTelemetry(exactPhuocLivePacket)).toBe(true);
+    const analysis = ExternalTelemetryAdapter.analyzeAndAdapt(exactPhuocLivePacket);
+    expect(analysis.errors).toEqual([]);
+    expect(analysis.telemetry).toBeDefined();
+
+    const tel = analysis.telemetry!;
+    expect(tel.uav_id).toBe('uav-1');
+    expect(tel.callsign).toBe('PX4-SYS-1');
+    expect(tel.timestamp).toBe('2026-11-18T16:19:30.123456Z');
+    expect(tel.simulation_time_sec).toBeCloseTo(138204, 1);
+    expect(tel.position.latitude).toBeCloseTo(16.0544, 6);
+    expect(tel.position.longitude).toBeCloseTo(108.2022, 6);
+    expect(tel.position.altitude_m).toBeCloseTo(2.78, 2);
+    expect(tel.position.altitude_reference).toBe('AGL');
+    expect(tel.velocity.ground_speed_mps).toBeCloseTo(0.05, 2);
+    expect(tel.velocity.vertical_speed_mps).toBe(0);
+    expect(tel.velocity.heading_deg).toBe(90);
+    expect(tel.battery_pct).toBe(98.5);
+    expect(tel.flight_mode).toBe('AUTO_HOLD');
+    expect(tel.status).toBe('HOVER');
+
+    // Verify full Khối 4 pipeline: Validator -> Synchronizer -> ObservedState -> Part5ExportBridge
+    const val = TelemetryValidator.validateTelemetry(tel);
+    expect(val.isValid).toBe(true);
+
+    const sync = new TelemetrySynchronizer();
+    const { state } = sync.processTelemetry(val.sanitized!, undefined, undefined);
+    expect(state.uav_id).toBe('uav-1');
+    expect(state.position.altitude_reference).toBe('AGL');
+
+    const feed = part5Bridge.generateSnapshot({ [state.uav_id]: state }, []);
+    expect(feed.active_uav_states['uav-1']).toBeDefined();
+  });
 });

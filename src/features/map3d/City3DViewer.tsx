@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useMonitoringStore } from '../../stores/useMonitoringStore';
 import { useTacticalStore } from '../../stores/useTacticalStore';
-import { ChevronDown, ChevronUp, Compass, Crosshair, Eye } from 'lucide-react';
+import { ChevronDown, ChevronUp, Compass, Crosshair, Eye, ShieldAlert } from 'lucide-react';
 import {
   ArticulatedUavHandle,
   buildArticulatedUav,
@@ -29,11 +29,18 @@ interface UavRuntimeEntry {
   trailLine: THREE.Line;
 }
 
-function getStatusHex(uav: ObservedUAVState): string {
+function getStatusHex(uav: ObservedUAVState, isConflicting: boolean): string {
+  if (isConflicting) return '#ef4444';
   if (uav.plan_deviation && !uav.plan_deviation.within_corridor) return '#f97316';
   if (uav.data_quality.freshness === 'STALE' || uav.data_quality.freshness === 'LOST') return '#ef4444';
   if (uav.data_quality.freshness === 'DEGRADED') return '#eab308';
   return '#22d3ee';
+}
+
+function getAltitudeTier(altM: number): string {
+  if (altM < 85) return 'T1';
+  if (altM <= 130) return 'T2';
+  return 'T3';
 }
 
 function shortestAngleLerp(current: number, target: number, t: number): number {
@@ -61,8 +68,11 @@ export const City3DViewer: React.FC = () => {
     showTrails,
     show3DCity,
     cameraTarget,
+    conflictDemoActive,
     selectUav,
     focusUav,
+    startConflictDemo,
+    stopConflictDemo,
   } = useMonitoringStore();
 
   const { conflicts, previewedOption } = useTacticalStore();
@@ -465,13 +475,21 @@ export const City3DViewer: React.FC = () => {
       }
     });
 
+    const conflictingIds = new Set<string>();
+    conflicts.forEach((c) => {
+      conflictingIds.add(c.uav_a_id);
+      conflictingIds.add(c.uav_b_id);
+    });
+
     Object.values(uavStates).forEach((uav) => {
       const targetPos = wgs84ToThree(uav.position.latitude, uav.position.longitude, uav.position.altitude_m);
       const targetYawRad = -((uav.velocity.heading_deg ?? 0) * Math.PI) / 180;
-      const accentHex = getStatusHex(uav);
+      const isConflicting = conflictingIds.has(uav.uav_id);
+      const accentHex = getStatusHex(uav, isConflicting);
       const isSelected = selectedUavId === uav.uav_id;
-      const labelTitle = uav.callsign || uav.uav_id;
-      const labelSub = `${Math.round(uav.position.altitude_m)}m ${uav.position.altitude_reference} • ${Math.round(uav.velocity.ground_speed_mps)}m/s`;
+      const tier = getAltitudeTier(uav.position.altitude_m);
+      const labelTitle = isConflicting ? `⚠ ${uav.callsign || uav.uav_id}` : uav.callsign || uav.uav_id;
+      const labelSub = `${Math.round(uav.position.altitude_m)}m ${uav.position.altitude_reference} (${tier}) • ${Math.round(uav.velocity.ground_speed_mps)}m/s`;
       const cacheKey = `${labelTitle}|${labelSub}|${accentHex}|${isSelected}`;
 
       let entry = uavMapRef.current.get(uav.uav_id);
@@ -548,7 +566,7 @@ export const City3DViewer: React.FC = () => {
         (entry.trailLine.material as THREE.LineBasicMaterial).color.set(accentHex);
       }
     });
-  }, [uavStates, selectedUavId, showTrails]);
+  }, [uavStates, selectedUavId, showTrails, conflicts]);
 
   // 7. Render Tactical Conflicts & Resolution Preview Trajectory
   useEffect(() => {
@@ -565,12 +583,45 @@ export const City3DViewer: React.FC = () => {
         c.uav_a_position_at_cpa.longitude,
         c.uav_a_position_at_cpa.altitude_m
       );
-      const beacon = new THREE.Mesh(
-        new THREE.SphereGeometry(18, 16, 16),
-        new THREE.MeshBasicMaterial({ color: '#ef4444', transparent: true, opacity: 0.78 })
+
+      // Inner red danger core + outer wireframe shockwave sphere
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(18, 18, 18),
+        new THREE.MeshBasicMaterial({ color: '#ef4444', transparent: true, opacity: 0.42 })
       );
-      beacon.position.copy(cpa);
-      group.add(beacon);
+      core.position.copy(cpa);
+      group.add(core);
+
+      const halo = new THREE.Mesh(
+        new THREE.SphereGeometry(28, 16, 12),
+        new THREE.MeshBasicMaterial({ color: '#f87171', wireframe: true, transparent: true, opacity: 0.72 })
+      );
+      halo.position.copy(cpa);
+      group.add(halo);
+
+      // CPA vertical drop-line to river/ground
+      const cpaDropGeo = new THREE.BufferGeometry().setFromPoints([
+        cpa.clone(),
+        new THREE.Vector3(cpa.x, 1.5, cpa.z),
+      ]);
+      group.add(
+        new THREE.Line(
+          cpaDropGeo,
+          new THREE.LineBasicMaterial({ color: '#ef4444', transparent: true, opacity: 0.65 })
+        )
+      );
+
+      // Floating CPA warning sprite
+      const cpaBadge = createOrUpdateLabelSprite(
+        undefined,
+        `⚠ CPA XUNG ĐỘT (${c.time_to_cpa_seconds}s)`,
+        `Khoảng cách: ${c.cpa_horizontal_distance_m}m • ΔZ: ${c.cpa_vertical_distance_m}m`,
+        '#ef4444',
+        false
+      );
+      cpaBadge.position.set(cpa.x, cpa.y + 42, cpa.z);
+      cpaBadge.scale.set(145, 42, 1);
+      group.add(cpaBadge);
 
       const uavA = uavStates[c.uav_a_id];
       const uavB = uavStates[c.uav_b_id];
@@ -578,7 +629,14 @@ export const City3DViewer: React.FC = () => {
         const posA = wgs84ToThree(uavA.position.latitude, uavA.position.longitude, uavA.position.altitude_m);
         const posB = wgs84ToThree(uavB.position.latitude, uavB.position.longitude, uavB.position.altitude_m);
         const linkGeo = new THREE.BufferGeometry().setFromPoints([posA, posB]);
-        group.add(new THREE.Line(linkGeo, new THREE.LineBasicMaterial({ color: '#ef4444' })));
+        const linkMat = new THREE.LineDashedMaterial({
+          color: '#ef4444',
+          dashSize: 12,
+          gapSize: 6,
+        });
+        const linkLine = new THREE.Line(linkGeo, linkMat);
+        linkLine.computeLineDistances();
+        group.add(linkLine);
       }
     });
 
@@ -586,8 +644,22 @@ export const City3DViewer: React.FC = () => {
       const pts = previewedOption.projected_trajectory.map((pt) =>
         wgs84ToThree(pt.latitude, pt.longitude, pt.altitude_m)
       );
-      const previewGeo = new THREE.BufferGeometry().setFromPoints(pts);
-      group.add(new THREE.Line(previewGeo, new THREE.LineBasicMaterial({ color: '#10b981' })));
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const tubeGeo = new THREE.TubeGeometry(curve, 40, 2.6, 8, false);
+      const tubeMat = new THREE.MeshBasicMaterial({
+        color: '#10b981',
+        transparent: true,
+        opacity: 0.85,
+      });
+      group.add(new THREE.Mesh(tubeGeo, tubeMat));
+
+      const nodeGeo = new THREE.SphereGeometry(5.5, 10, 10);
+      const nodeMat = new THREE.MeshBasicMaterial({ color: '#34d399' });
+      pts.forEach((pt) => {
+        const orb = new THREE.Mesh(nodeGeo, nodeMat);
+        orb.position.copy(pt);
+        group.add(orb);
+      });
     }
   }, [conflicts, previewedOption, uavStates]);
 
@@ -740,6 +812,20 @@ export const City3DViewer: React.FC = () => {
         >
           <Eye className="w-3 h-3 text-cyan-400" />
           Cỡ UAV: {heroScaleMode ? 'Nổi bật (MVP)' : 'Gọn hơn'}
+        </button>
+
+        <div className="border-t border-slate-800 my-0.5" />
+
+        <button
+          onClick={() => (conflictDemoActive ? stopConflictDemo() : startConflictDemo())}
+          className={`flex items-center justify-center gap-1.5 py-1.5 px-2 text-[11px] font-semibold rounded border transition-all ${
+            conflictDemoActive
+              ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 shadow-md shadow-rose-950 animate-pulse'
+              : 'bg-rose-950/70 hover:bg-rose-900/80 text-rose-200 border-rose-700/80'
+          }`}
+        >
+          <ShieldAlert className="w-3.5 h-3.5" />
+          <span>{conflictDemoActive ? 'Dừng Kịch bản Xung đột' : 'Mô phỏng Xung đột 3D'}</span>
         </button>
       </div>
 

@@ -117,7 +117,7 @@ export const CesiumViewer: React.FC = () => {
       const pickedObject = viewer.scene.pick(movement.position);
       if (Cesium.defined(pickedObject) && pickedObject.id && pickedObject.id.name) {
         const name = String(pickedObject.id.name);
-        if (name.startsWith('UAV-')) {
+        if (name.toUpperCase().startsWith('UAV-')) {
           selectUav(name);
         }
       }

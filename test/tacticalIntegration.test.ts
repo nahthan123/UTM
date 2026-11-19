@@ -195,4 +195,21 @@ describe('Task 11 & 13: Tactical Frontend Integration', () => {
     useTacticalStore.getState().setAiEnabled(true);
     expect(useTacticalStore.getState().aiEnabled).toBe(true);
   });
+
+  it('Đề xuất phương án kèm quỹ đạo 3D tránh va chạm và chuyển sang VERIFIED khi tách an toàn', async () => {
+    await useTacticalStore.getState().processFeedSnapshot(mockFeedConflict);
+    const sessions = Object.values(useTacticalStore.getState().sessions);
+    const session = sessions[0];
+    expect(session.proposed_options.length).toBeGreaterThanOrEqual(2);
+    expect(session.proposed_options[0].projected_trajectory.length).toBeGreaterThanOrEqual(5);
+
+    await useTacticalStore
+      .getState()
+      .approveResolution(session.session_id, session.proposed_options[0].option_id);
+    expect(useTacticalStore.getState().sessions[session.session_id].lifecycle_state).toBe('EXECUTING');
+
+    // Once UAVs separate cleanly (mockFeedNormal), EXECUTING session transitions to VERIFIED
+    await useTacticalStore.getState().processFeedSnapshot(mockFeedNormal);
+    expect(useTacticalStore.getState().sessions[session.session_id].lifecycle_state).toBe('VERIFIED');
+  });
 });

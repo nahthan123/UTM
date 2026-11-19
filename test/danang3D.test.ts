@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DANANG_3D_BRIDGES,
   DANANG_3D_BUILDINGS,
+  DANANG_PARKS_ENU,
   DANANG_VERTIPORT_PADS,
   generateUrbanDistrictBlocks,
 } from '../src/data/danang3DEnvironment';
@@ -18,15 +19,41 @@ describe('Da Nang 3D Urban Environment & ENU Projection', () => {
     expect(back.altitude_m).toBeCloseTo(sample.alt, 1);
   });
 
-  it('2. Sinh dữ liệu khối đô thị 3D hợp lệ, không lấn vào khu đường băng sân bay', () => {
+  it('2. Sinh dữ liệu khối đô thị 3D phân tầng cao-thấp, mật độ đúng vùng và tránh sân bay/công viên', () => {
     const blocks = generateUrbanDistrictBlocks();
-    expect(blocks.length).toBeGreaterThan(80);
+    expect(blocks.length).toBeGreaterThan(200);
+
+    const cbd = blocks.filter((b) => b.zone === 'CBD_HIGHRISE');
+    const coastal = blocks.filter((b) => b.zone === 'COASTAL_HOTEL');
+    const midrise = blocks.filter((b) => b.zone === 'MIDRISE_COMMERCIAL');
+    const lowrise = blocks.filter((b) => b.zone === 'LOWRISE_RESIDENTIAL');
+
+    expect(cbd.length).toBeGreaterThan(15);
+    expect(coastal.length).toBeGreaterThan(10);
+    expect(midrise.length).toBeGreaterThan(15);
+    expect(lowrise.length).toBeGreaterThan(100);
+
+    for (const b of lowrise) {
+      expect(b.heightM).toBeGreaterThanOrEqual(10);
+      expect(b.heightM).toBeLessThanOrEqual(22);
+    }
+    for (const b of cbd) {
+      expect(b.heightM).toBeGreaterThanOrEqual(58);
+      expect(b.heightM).toBeLessThanOrEqual(122);
+    }
+
     for (const b of blocks) {
-      expect(b.heightM).toBeGreaterThanOrEqual(16);
-      expect(b.widthM).toBeGreaterThan(20);
       // Must exclude airport SW runway zone
       const inAirportRunway = b.x < -1250 && b.y < 320 && b.y > -3800;
       expect(inAirportRunway).toBe(false);
+
+      // Must keep waterfront & beachfront parks free of buildings
+      for (const park of DANANG_PARKS_ENU) {
+        const insidePark =
+          Math.abs(b.x - park.x) < park.widthM / 2 &&
+          Math.abs(b.y - park.y) < park.depthM / 2;
+        expect(insidePark).toBe(false);
+      }
     }
   });
 

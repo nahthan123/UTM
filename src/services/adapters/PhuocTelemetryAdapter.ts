@@ -24,10 +24,91 @@ export interface PhuocRawUavTelemetry {
   messageType?: string;
   sequence?: number;
   flightPlanId?: string;
-  timestamp?: string;
+  timestamp?: string | number;
+  ts?: string | number;
+  time?: string | number;
   simulationTimeSec?: number;
   uav_id?: string;
   id?: string;
+  drone_id?: string;
+  system_id?: number;
+  callsign?: string;
+  // Exact nested PX4 / FastAPI bridge payload (ws://localhost:8000/ws/telemetry 10Hz)
+  status?: {
+    connected?: boolean;
+    armed?: boolean;
+    flight_mode?: string;
+    landed_state?: string;
+  };
+  position?: {
+    latitude?: number;
+    longitude?: number;
+    altitude_msl_m?: number;
+    relative_altitude_m?: number;
+    altitude_m?: number;
+  };
+  local_position?: {
+    x_m?: number;
+    y_m?: number;
+    z_m?: number;
+  };
+  velocity?: {
+    vx_m_s?: number;
+    vy_m_s?: number;
+    vz_m_s?: number;
+    groundspeed_m_s?: number;
+    climb_rate_m_s?: number;
+  };
+  attitude?: {
+    roll_deg?: number;
+    pitch_deg?: number;
+    yaw_deg?: number;
+    heading_deg?: number;
+  };
+  gps?: {
+    fix_type?: number;
+    satellites?: number;
+  };
+  timestamps?: {
+    source_timestamp_ms?: number;
+    backend_timestamp?: string;
+  };
+  // Flat PX4 / FastAPI WGS84 fields (fallback)
+  lat?: number;
+  lon?: number;
+  lng?: number;
+  latitude?: number;
+  longitude?: number;
+  alt?: number;
+  alt_msl?: number;
+  altitude?: number;
+  altitude_msl?: number;
+  rel_alt?: number;
+  relative_alt?: number;
+  relative_altitude?: number;
+  relative_altitude_m?: number;
+  alt_rel?: number;
+  altitude_agl?: number;
+  heading?: number;
+  heading_deg?: number;
+  yaw?: number;
+  yaw_deg?: number;
+  speed?: number;
+  ground_speed?: number;
+  ground_speed_mps?: number;
+  vz?: number;
+  vertical_speed?: number;
+  vertical_speed_mps?: number;
+  battery?: number | { percent?: number; remaining_percent?: number; voltage?: number; voltage_v?: number };
+  battery_pct?: number;
+  batteryPercent?: number;
+  battery_remaining?: number;
+  mode?: string;
+  flight_mode?: string;
+  flightMode?: string;
+  in_air?: boolean;
+  is_in_air?: boolean;
+  // Flat Gazebo local ENU fields
   x?: number;
   y?: number;
   z?: number;
@@ -105,6 +186,24 @@ export class PhuocTelemetryAdapter {
     ) {
       return true;
     }
+    // Nested PX4 / FastAPI telemetry (ws://localhost:8000/ws/telemetry: top-level position + uav_id)
+    if (
+      obj.type !== 'uav.telemetry' &&
+      obj.position &&
+      typeof obj.position === 'object' &&
+      typeof (obj.position as Record<string, unknown>).latitude === 'number' &&
+      typeof (obj.position as Record<string, unknown>).longitude === 'number'
+    ) {
+      return true;
+    }
+    // Flat PX4 / FastAPI WGS84 stream (e.g., ws://localhost:8000/ws/telemetry 10Hz)
+    if (
+      obj.type !== 'uav.telemetry' &&
+      ((typeof obj.lat === 'number' && (typeof obj.lon === 'number' || typeof obj.lng === 'number')) ||
+        (typeof obj.latitude === 'number' && typeof obj.longitude === 'number'))
+    ) {
+      return true;
+    }
     return false;
   }
 
@@ -149,38 +248,153 @@ export class PhuocTelemetryAdapter {
       missing.push('messageType');
     }
 
-    // Check timestamp
+    // Check timestamp (supports timestamps.backend_timestamp, ISO string, or numeric epoch seconds/ms)
     let finalTimestamp = new Date().toISOString();
-    if (p.timestamp) {
-      const parsedTime = new Date(p.timestamp);
+    const rawTs = p.timestamps?.backend_timestamp ?? p.timestamp ?? p.ts ?? p.time;
+    if (typeof rawTs === 'string') {
+      const parsedTime = new Date(rawTs);
       if (!isNaN(parsedTime.getTime())) {
-        finalTimestamp = p.timestamp;
-        received.push(`timestamp: "${p.timestamp}"`);
+        finalTimestamp = rawTs;
+        received.push(`timestamp: "${rawTs}"`);
       } else {
-        errors.push(`Timestamp không hợp lệ: "${p.timestamp}"`);
+        errors.push(`Timestamp không hợp lệ: "${rawTs}"`);
       }
+    } else if (typeof rawTs === 'number' && Number.isFinite(rawTs)) {
+      const ms = rawTs < 1e12 ? rawTs * 1000 : rawTs;
+      finalTimestamp = new Date(ms).toISOString();
+      received.push(`timestamp(epoch): "${finalTimestamp}"`);
     } else {
       missing.push('timestamp');
       inferred.push(`timestamp (dùng thời gian nhận của bộ giám sát UTM: ${finalTimestamp})`);
     }
 
-    // Simulation time in seconds
-    if (typeof p.simulationTimeSec === 'number') {
-      received.push(`simulationTimeSec: ${p.simulationTimeSec}s`);
+    // Simulation time in seconds (supports simulationTimeSec or timestamps.source_timestamp_ms)
+    const derivedSimSec =
+      typeof p.simulationTimeSec === 'number'
+        ? p.simulationTimeSec
+        : typeof p.timestamps?.source_timestamp_ms === 'number'
+        ? Math.round((p.timestamps.source_timestamp_ms / 1000) * 1000) / 1000
+        : undefined;
+    if (typeof derivedSimSec === 'number') {
+      received.push(`simulationTimeSec: ${derivedSimSec}s`);
     } else {
       missing.push('simulationTimeSec');
     }
 
+    // Guard: ignore disconnected PX4 placeholder packets (e.g. status.connected === false before GPS lock)
+    if (p.status && p.status.connected === false) {
+      errors.push('UAV chưa kết nối tới autopilot (status.connected = false)');
+      return { receivedFields: received, inferredFields: inferred, missingFields: missing, errors };
+    }
+
+    const nestedPx4Pos = p.position && typeof p.position === 'object' ? p.position : undefined;
+    const flatLat = nestedPx4Pos?.latitude ?? p.lat ?? p.latitude;
+    const flatLon = nestedPx4Pos?.longitude ?? p.lon ?? p.lng ?? p.longitude;
+    const hasFlatOrPx4Wgs84 = typeof flatLat === 'number' && typeof flatLon === 'number';
+    const flatRelAlt =
+      nestedPx4Pos?.relative_altitude_m ??
+      p.rel_alt ??
+      p.relative_alt ??
+      p.relative_altitude ??
+      p.relative_altitude_m ??
+      p.alt_rel ??
+      p.altitude_agl;
+    const flatMslAlt =
+      nestedPx4Pos?.altitude_msl_m ??
+      nestedPx4Pos?.altitude_m ??
+      p.alt ??
+      p.alt_msl ??
+      p.altitude ??
+      p.altitude_msl;
+    const flatHeading =
+      p.attitude?.heading_deg ??
+      p.attitude?.yaw_deg ??
+      p.headingDeg ??
+      p.heading_deg ??
+      p.heading ??
+      p.yaw_deg ??
+      p.yaw;
+    const flatSpeed =
+      p.velocity?.groundspeed_m_s ??
+      (typeof p.velocity?.vx_m_s === 'number' && typeof p.velocity?.vy_m_s === 'number'
+        ? Math.hypot(p.velocity.vx_m_s, p.velocity.vy_m_s)
+        : undefined) ??
+      p.ground_speed_mps ??
+      p.ground_speed ??
+      p.speed_mps ??
+      p.speed;
+    const flatVz =
+      p.velocity?.climb_rate_m_s ??
+      (typeof p.velocity?.vz_m_s === 'number' ? -p.velocity.vz_m_s : undefined) ??
+      p.vertical_speed_mps ??
+      p.vertical_speed ??
+      p.vz;
+    const flatBattery =
+      typeof p.battery === 'number'
+        ? p.battery
+        : typeof p.battery === 'object' && p.battery !== null
+        ? p.battery.remaining_percent ?? p.battery.percent
+        : p.batteryPercent ?? p.battery_pct ?? p.battery_remaining;
+    const flatMode = p.status?.flight_mode ?? p.flightMode ?? p.flight_mode ?? p.mode;
+
+    if (hasFlatOrPx4Wgs84 && typeof flatRelAlt === 'number' && typeof flatMslAlt === 'number') {
+      received.push(`position.altitude_msl_m: ${flatMslAlt}m (MSL gốc song song với relative_altitude_m)`);
+    }
+    if (typeof p.battery === 'object' && p.battery !== null && typeof p.battery.voltage_v === 'number') {
+      received.push(`battery.voltage_v: ${p.battery.voltage_v}V`);
+    }
+    if (p.gps && typeof p.gps === 'object') {
+      received.push(`gps: fix_type=${p.gps.fix_type ?? '?'}, satellites=${p.gps.satellites ?? '?'}`);
+    }
+    if (p.attitude && typeof p.attitude === 'object') {
+      received.push(
+        `attitude: roll=${p.attitude.roll_deg ?? 0}°, pitch=${p.attitude.pitch_deg ?? 0}°, yaw=${p.attitude.yaw_deg ?? 0}°`
+      );
+    }
+    if (p.status?.landed_state) {
+      received.push(`status.landed_state: "${p.status.landed_state}"`);
+    }
+
+    const flatDefaultId = !p.uav && hasFlatOrPx4Wgs84 && !p.uav_id && !p.id && !p.drone_id;
+    if (flatDefaultId) {
+      inferred.push('uav.id (mặc định "UAV-PX4-01" cho luồng đơn PX4/FastAPI)');
+    }
+
     const u = p.uav || {
-      id: p.uav_id || p.id,
-      position: p.localPosition
+      id: p.uav_id || p.id || p.drone_id || (hasFlatOrPx4Wgs84 ? 'UAV-PX4-01' : undefined),
+      callsign:
+        p.callsign ||
+        (hasFlatOrPx4Wgs84
+          ? typeof p.system_id === 'number'
+            ? `PX4-SYS-${p.system_id}`
+            : 'PX4-SITL-LIVE'
+          : undefined),
+      position: hasFlatOrPx4Wgs84
+        ? {
+            latitude: flatLat,
+            longitude: flatLon,
+            altitudeAGL_m: typeof flatRelAlt === 'number' ? Math.max(0, flatRelAlt) : undefined,
+            altitudeMSL_m: typeof flatRelAlt !== 'number' && typeof flatMslAlt === 'number' ? flatMslAlt : undefined,
+          }
+        : p.localPosition
         ? { x: p.localPosition.x, y: p.localPosition.y, z: p.localPosition.z, altitudeAGL_m: p.localPosition.z }
         : typeof p.x === 'number' && typeof p.y === 'number'
         ? { x: p.x, y: p.y, z: p.z, altitudeAGL_m: p.z }
         : undefined,
       movement:
-        typeof p.speed_mps === 'number' || typeof p.headingDeg === 'number'
-          ? { groundSpeed_mps: p.speed_mps, headingDeg: p.headingDeg }
+        typeof flatSpeed === 'number' || typeof flatHeading === 'number' || typeof flatVz === 'number'
+          ? {
+              groundSpeed_mps: flatSpeed ?? 0,
+              headingDeg: flatHeading ?? 0,
+              verticalSpeed_mps: flatVz,
+            }
+          : undefined,
+      system:
+        typeof flatBattery === 'number' || flatMode
+          ? {
+              batteryPercent: flatBattery,
+              flightMode: flatMode,
+            }
           : undefined,
     };
 
@@ -369,12 +583,31 @@ export class PhuocTelemetryAdapter {
 
     // Inferred status
     let inferredStatus: UAVTelemetryMessage['status'] = 'UNKNOWN';
-    if (flightMode && flightMode.toUpperCase().includes('CONTROL')) {
+    const upperMode = flightMode ? flightMode.toUpperCase() : '';
+    const landedState = p.status?.landed_state ? p.status.landed_state.toUpperCase() : '';
+    const inAirFlag = p.in_air ?? p.is_in_air ?? (landedState ? landedState === 'IN_AIR' : undefined);
+
+    if (landedState === 'ON_GROUND' || inAirFlag === false) {
+      inferredStatus = 'IDLE';
+      inferred.push("status (suy ra 'IDLE' do đang ở mặt đất ON_GROUND)");
+    } else if (landedState === 'TAKING_OFF' || upperMode.includes('TAKEOFF')) {
+      inferredStatus = 'TAKEOFF';
+      inferred.push("status (suy ra 'TAKEOFF' từ trạng thái cất cánh)");
+    } else if (landedState === 'LANDING' || upperMode.includes('LAND')) {
+      inferredStatus = 'LANDING';
+      inferred.push("status (suy ra 'LANDING' từ trạng thái hạ cánh)");
+    } else if (upperMode.includes('HOLD') || upperMode.includes('LOITER')) {
+      inferredStatus = groundSpeedMps > 1.0 ? 'FLYING' : 'HOVER';
+      inferred.push(`status (suy ra '${inferredStatus}' từ flightMode '${flightMode}')`);
+    } else if (upperMode.includes('CONTROL') || upperMode.includes('MISSION') || upperMode.includes('OFFBOARD')) {
       inferredStatus = groundSpeedMps > 0.5 ? 'FLYING' : 'HOVER';
       inferred.push(`status (suy ra '${inferredStatus}' từ flightMode và groundSpeed)`);
     } else if (groundSpeedMps > 0.5) {
       inferredStatus = 'FLYING';
       inferred.push(`status (suy ra 'FLYING' do groundSpeed > 0)`);
+    } else if (inAirFlag === true || altitudeM > 1.0) {
+      inferredStatus = 'HOVER';
+      inferred.push("status (suy ra 'HOVER' do đang trên không)");
     } else {
       inferredStatus = 'UNKNOWN';
     }
@@ -410,7 +643,7 @@ export class PhuocTelemetryAdapter {
       is_inferred_sequence: isInferredSequence,
       timestamp: finalTimestamp,
       message_created_at: finalTimestamp,
-      simulation_time_sec: p.simulationTimeSec,
+      simulation_time_sec: derivedSimSec,
       uav_id: u.id!,
       callsign: u.callsign,
       flight_plan_id: p.flightPlanId,

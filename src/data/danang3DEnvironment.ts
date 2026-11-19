@@ -157,6 +157,12 @@ export interface RoadSegment3D {
   color?: string;
 }
 
+export type UrbanZoneType =
+  | 'CBD_HIGHRISE'
+  | 'COASTAL_HOTEL'
+  | 'MIDRISE_COMMERCIAL'
+  | 'LOWRISE_RESIDENTIAL';
+
 export interface GeneratedCityBlock3D {
   x: number;      // ENU East (m)
   y: number;      // ENU North (m)
@@ -164,8 +170,29 @@ export interface GeneratedCityBlock3D {
   depthM: number;
   heightM: number;
   color: string;
+  zone: UrbanZoneType;
   hasBeacon?: boolean;
 }
+
+export interface UrbanPark3D {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  widthM: number;
+  depthM: number;
+  treeCount: number;
+}
+
+/**
+ * Open green spaces & waterfront parks in Da Nang (kept free of buildings)
+ */
+export const DANANG_PARKS_ENU: UrbanPark3D[] = [
+  { id: 'PK-APEC', name: 'Công viên APEC (Cầu Rồng Tây)', x: -245, y: -145, widthM: 140, depthM: 170, treeCount: 18 },
+  { id: 'PK-BACH-DANG', name: 'Công viên Bạch Đằng Ven Sông', x: -195, y: 580, widthM: 110, depthM: 360, treeCount: 24 },
+  { id: 'PK-MARINA-EAST', name: 'Công viên Bờ Đông Trần Hưng Đạo', x: 350, y: 380, widthM: 130, depthM: 340, treeCount: 22 },
+  { id: 'PK-BIEN-DONG', name: 'Công viên Biển Đông (Mỹ Khê)', x: 2240, y: 820, widthM: 190, depthM: 320, treeCount: 28 },
+];
 
 /**
  * Han River centerline in local ENU meters relative to DANANG_ENU_ORIGIN (Dragon Bridge)
@@ -301,60 +328,123 @@ function getRiverCenterX(y: number): number {
   return pts[pts.length - 1].x;
 }
 
+function isInsidePark(x: number, y: number, margin = 30): boolean {
+  return DANANG_PARKS_ENU.some(
+    (p) =>
+      Math.abs(x - p.x) <= p.widthM / 2 + margin &&
+      Math.abs(y - p.y) <= p.depthM / 2 + margin
+  );
+}
+
 /**
- * Generates deterministic secondary urban building blocks across Da Nang districts
- * (Hai Chau, An Hai, My Khe) while respecting Han River, airport zone, and shoreline.
+ * Generates deterministic height-zoned & density-zoned Da Nang 3D urban blocks:
+ * - CBD_HIGHRISE: Tall waterfront towers along Bach Dang / Tran Phu / Tran Hung Dao (58-122m)
+ * - COASTAL_HOTEL: Mid-high beachfront hotels along My Khe / Vo Nguyen Giap (45-110m)
+ * - MIDRISE_COMMERCIAL: Medium blocks along Nguyen Van Linh, Le Duan, Ngo Quyen (24-48m)
+ * - LOWRISE_RESIDENTIAL: Dense 3-5 story inland Vietnamese residential fabric (10-22m)
  */
 export function generateUrbanDistrictBlocks(): GeneratedCityBlock3D[] {
   const rand = seededRandom(20261112);
   const blocks: GeneratedCityBlock3D[] = [];
-  const palette = ['#1e293b', '#273549', '#334155', '#1f2d42', '#2c3d55', '#3b4c66'];
 
-  // Urban grid bounds around central Han River & coastal strip
-  for (let gx = -1750; gx <= 2320; gx += 165) {
-    for (let gy = -2450; gy <= 3550; gy += 165) {
-      const jitterX = (rand() - 0.5) * 42;
-      const jitterY = (rand() - 0.5) * 42;
-      const x = gx + jitterX;
-      const y = gy + jitterY;
+  const cbdPalette = ['#334155', '#475569', '#3b4c66', '#2c3d55'];
+  const coastalPalette = ['#3d4f6b', '#475569', '#334155', '#526582'];
+  const midrisePalette = ['#273549', '#334155', '#2c3d55'];
+  const lowrisePalette = ['#1e293b', '#243247', '#2a394e', '#1f2d40', '#2e3e52'];
 
-      // Skip Han River channel buffer (+/- 225m around centerline)
+  // Pass 1: CBD High-Rise, Coastal Hotels & Mid-Rise Commercial Corridors (spacing 145m)
+  for (let gx = -1700; gx <= 2320; gx += 145) {
+    for (let gy = -2450; gy <= 3450; gy += 145) {
+      const x = gx + (rand() - 0.5) * 34;
+      const y = gy + (rand() - 0.5) * 34;
+
       const riverX = getRiverCenterX(y);
-      if (Math.abs(x - riverX) < 225) continue;
-
-      // Skip Da Nang International Airport active runway box (SW quadrant)
-      if (x < -1250 && y < 320 && y > -3800) continue;
-
-      // Skip main cross-road corridors so buildings align cleanly into city blocks
-      if (Math.abs(y) < 75 || Math.abs(y - 1220) < 75 || Math.abs(y + 1220) < 75) continue;
-      if (Math.abs(x - 980) < 65) continue;
-
-      // Coastal fade near East Sea
-      if (x > 2280) continue;
-
-      // Probability & height bias (taller near riverfront & coastal My Khe)
       const distRiver = Math.abs(x - riverX);
-      const isRiverFront = distRiver < 620;
-      const isBeachFront = x > 1850;
-      const density = isRiverFront || isBeachFront ? 0.78 : 0.55;
-      if (rand() > density) continue;
+      if (distRiver < 235) continue;
+      if (x < -1250 && y < 320 && y > -3800) continue; // Airport runway NFZ
+      if (x > 2280) continue; // Coastline
+      if (isInsidePark(x, y, 28)) continue;
 
-      const widthM = 28 + rand() * 34;
-      const depthM = 26 + rand() * 32;
-      const baseH = isRiverFront
-        ? 26 + rand() * 58
-        : isBeachFront
-        ? 30 + rand() * 68
-        : 16 + rand() * 38;
+      // Clear arterial road centerlines
+      if (Math.abs(y) < 72 || Math.abs(y - 1220) < 72 || Math.abs(y + 1220) < 72) continue;
+      if (Math.abs(x - 980) < 62) continue;
+
+      const isCbdWaterfront = distRiver < 580 && y > -1150 && y < 2150;
+      const isCoastalStrip = x > 1880 && y > -2500 && y < 2350;
+      const isCommercialAxis =
+        Math.abs(y) < 270 || Math.abs(y - 1220) < 250 || Math.abs(x - 980) < 220;
+
+      if (isCbdWaterfront) {
+        if (rand() > 0.78) continue;
+        const heightM = Math.round(58 + rand() * 64);
+        blocks.push({
+          x: Math.round(x),
+          y: Math.round(y),
+          widthM: Math.round(30 + rand() * 22),
+          depthM: Math.round(28 + rand() * 20),
+          heightM,
+          color: cbdPalette[Math.floor(rand() * cbdPalette.length)],
+          zone: 'CBD_HIGHRISE',
+          hasBeacon: heightM >= 85,
+        });
+      } else if (isCoastalStrip) {
+        if (rand() > 0.76) continue;
+        const heightM = Math.round(45 + rand() * 65);
+        blocks.push({
+          x: Math.round(x),
+          y: Math.round(y),
+          widthM: Math.round(32 + rand() * 22),
+          depthM: Math.round(28 + rand() * 20),
+          heightM,
+          color: coastalPalette[Math.floor(rand() * coastalPalette.length)],
+          zone: 'COASTAL_HOTEL',
+          hasBeacon: heightM >= 85,
+        });
+      } else if (isCommercialAxis) {
+        if (rand() > 0.68) continue;
+        const heightM = Math.round(24 + rand() * 24);
+        blocks.push({
+          x: Math.round(x),
+          y: Math.round(y),
+          widthM: Math.round(26 + rand() * 20),
+          depthM: Math.round(24 + rand() * 18),
+          heightM,
+          color: midrisePalette[Math.floor(rand() * midrisePalette.length)],
+          zone: 'MIDRISE_COMMERCIAL',
+          hasBeacon: false,
+        });
+      }
+    }
+  }
+
+  // Pass 2: Dense Low-Rise Residential Neighborhoods (3-5 stories, 10-22m tall, tighter 88m grid)
+  for (let gx = -1650; gx <= 1840; gx += 88) {
+    for (let gy = -2350; gy <= 3300; gy += 88) {
+      const x = gx + (rand() - 0.5) * 20;
+      const y = gy + (rand() - 0.5) * 20;
+
+      const riverX = getRiverCenterX(y);
+      const distRiver = Math.abs(x - riverX);
+      if (distRiver < 560 && y > -1150 && y < 2150) continue; // Keep CBD waterfront distinct
+      if (distRiver < 245) continue;
+      if (x < -1250 && y < 320 && y > -3800) continue; // Airport runway NFZ
+      if (isInsidePark(x, y, 22)) continue;
+
+      // Clear arterial road bands & mid-rise commercial belts
+      if (Math.abs(y) < 250 || Math.abs(y - 1220) < 230 || Math.abs(y + 1220) < 80) continue;
+      if (Math.abs(x - 980) < 200) continue;
+
+      if (rand() > 0.66) continue;
 
       blocks.push({
         x: Math.round(x),
         y: Math.round(y),
-        widthM: Math.round(widthM),
-        depthM: Math.round(depthM),
-        heightM: Math.round(baseH),
-        color: palette[Math.floor(rand() * palette.length)],
-        hasBeacon: baseH > 68,
+        widthM: Math.round(16 + rand() * 14),
+        depthM: Math.round(15 + rand() * 13),
+        heightM: Math.round(10 + rand() * 12),
+        color: lowrisePalette[Math.floor(rand() * lowrisePalette.length)],
+        zone: 'LOWRISE_RESIDENTIAL',
+        hasBeacon: false,
       });
     }
   }

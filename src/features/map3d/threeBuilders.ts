@@ -3,6 +3,7 @@ import {
   DANANG_3D_BRIDGES,
   DANANG_3D_BUILDINGS,
   DANANG_3D_TERRAIN_BLOCKS,
+  DANANG_PARKS_ENU,
   DANANG_RIVER_CENTERLINE_ENU,
   DANANG_ROADS_ENU,
   DANANG_VERTIPORT_PADS,
@@ -464,22 +465,83 @@ export function buildDaNangCityEnvironment(): THREE.Group {
     if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
     cityGroup.add(instMesh);
 
-    // Subtle glowing roof trim on taller district blocks
+    // Subtle glowing roof trim & aviation obstacle beacons on high-rises (> 85m)
     const beaconBlocks = urbanBlocks.filter((b) => b.hasBeacon);
     if (beaconBlocks.length > 0) {
-      const capGeo = new THREE.BoxGeometry(1, 1.5, 1);
-      const capMat = new THREE.MeshBasicMaterial({ color: '#22d3ee', transparent: true, opacity: 0.65 });
+      const capGeo = new THREE.BoxGeometry(1, 1.6, 1);
+      const capMat = new THREE.MeshBasicMaterial({ color: '#38bdf8', transparent: true, opacity: 0.72 });
       const capMesh = new THREE.InstancedMesh(capGeo, capMat, beaconBlocks.length);
+
+      const obsGeo = new THREE.SphereGeometry(2.4, 8, 8);
+      const obsMat = new THREE.MeshBasicMaterial({ color: '#f43f5e' });
+      const obsMesh = new THREE.InstancedMesh(obsGeo, obsMat, beaconBlocks.length);
+
       beaconBlocks.forEach((b, idx) => {
-        const pos = enuToThree(b.x, b.y, b.heightM + 0.8);
+        const pos = enuToThree(b.x, b.y, b.heightM + 0.9);
         dummy.position.copy(pos);
-        dummy.scale.set(b.widthM * 0.72, 1, b.depthM * 0.72);
+        dummy.scale.set(b.widthM * 0.74, 1, b.depthM * 0.74);
         dummy.updateMatrix();
         capMesh.setMatrixAt(idx, dummy.matrix);
+
+        dummy.position.set(pos.x, b.heightM + 4.0, pos.z);
+        dummy.scale.setScalar(1);
+        dummy.updateMatrix();
+        obsMesh.setMatrixAt(idx, dummy.matrix);
       });
       capMesh.instanceMatrix.needsUpdate = true;
-      cityGroup.add(capMesh);
+      obsMesh.instanceMatrix.needsUpdate = true;
+      cityGroup.add(capMesh, obsMesh);
     }
+  }
+
+  // 8b. Waterfront & Coastal Green Parks + Low-Poly Trees
+  const totalTrees = DANANG_PARKS_ENU.reduce((acc, p) => acc + p.treeCount, 0);
+  if (totalTrees > 0) {
+    const trunkGeo = new THREE.CylinderGeometry(0.9, 1.3, 5.5, 6);
+    const trunkMat = new THREE.MeshStandardMaterial({ color: '#5c4033', roughness: 0.9 });
+    const crownGeo = new THREE.ConeGeometry(4.6, 10.5, 7);
+    const crownMat = new THREE.MeshStandardMaterial({ color: '#15803d', roughness: 0.85, flatShading: true });
+
+    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, totalTrees);
+    const crowns = new THREE.InstancedMesh(crownGeo, crownMat, totalTrees);
+    const treeDummy = new THREE.Object3D();
+    let treeIdx = 0;
+
+    DANANG_PARKS_ENU.forEach((park, pIdx) => {
+      const parkPos = enuToThree(park.x, park.y, 0.75);
+      const parkPad = new THREE.Mesh(
+        new THREE.BoxGeometry(park.widthM, 0.7, park.depthM),
+        new THREE.MeshStandardMaterial({ color: '#14532d', roughness: 0.95 })
+      );
+      parkPad.position.copy(parkPos);
+      parkPad.receiveShadow = true;
+      cityGroup.add(parkPad);
+
+      for (let t = 0; t < park.treeCount; t++) {
+        const h1 = Math.sin((pIdx + 1) * 97 + (t + 1) * 31.7) * 43758.5453;
+        const h2 = Math.cos((pIdx + 1) * 53 + (t + 1) * 19.3) * 24634.6345;
+        const fx = h1 - Math.floor(h1) - 0.5;
+        const fy = h2 - Math.floor(h2) - 0.5;
+        const tx = park.x + fx * (park.widthM * 0.82);
+        const ty = park.y + fy * (park.depthM * 0.82);
+        const scale = 0.85 + ((t * 17) % 10) * 0.04;
+
+        const base = enuToThree(tx, ty, 3.2 * scale);
+        treeDummy.position.copy(base);
+        treeDummy.scale.setScalar(scale);
+        treeDummy.updateMatrix();
+        trunks.setMatrixAt(treeIdx, treeDummy.matrix);
+
+        treeDummy.position.set(base.x, 9.2 * scale, base.z);
+        treeDummy.updateMatrix();
+        crowns.setMatrixAt(treeIdx, treeDummy.matrix);
+        treeIdx++;
+      }
+    });
+
+    trunks.instanceMatrix.needsUpdate = true;
+    crowns.instanceMatrix.needsUpdate = true;
+    cityGroup.add(trunks, crowns);
   }
 
   // 9. 4 Iconic Han River Bridges

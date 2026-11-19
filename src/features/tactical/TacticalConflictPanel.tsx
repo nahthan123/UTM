@@ -121,12 +121,19 @@ export const TacticalConflictPanel: React.FC = () => {
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar text-xs">
         {sessionList.length === 0 ? (
-          <div className="py-8 text-center text-slate-500 space-y-2">
+          <div className="py-6 text-center text-slate-500 space-y-2.5">
             <CheckCircle2 className="w-8 h-8 text-emerald-500/60 mx-auto" />
-            <p className="text-xs font-medium text-slate-400">Không phận An toàn</p>
+            <p className="text-xs font-medium text-slate-300">Không phận An toàn</p>
             <p className="text-[11px] text-slate-500 max-w-[240px] mx-auto">
               Không phát hiện nguy cơ vi phạm phân cách 3D hoặc vùng hạn chế trong cửa sổ dự báo 60s.
             </p>
+            <button
+              onClick={() => useMonitoringStore.getState().startConflictDemo()}
+              className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-700/80 text-[11px] font-semibold transition-all"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+              <span>Kích hoạt Kịch bản Xung đột 3D</span>
+            </button>
           </div>
         ) : (
           sessionList.map((session) => {

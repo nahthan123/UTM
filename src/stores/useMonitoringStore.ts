@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { IngestibleMessage, UAVTelemetryMessage, FlightPlan, RestrictedZone, MonitoringAlert, SimulationStatus } from '../types/telemetry';
+import { IngestibleMessage, FlightPlan, RestrictedZone, MonitoringAlert, SimulationStatus } from '../types/telemetry';
 import { ObservedUAVState } from '../types/monitoring';
+import { ResolutionAdjustment } from '../types/tactical';
 import { TelemetryValidator } from '../services/validator/TelemetryValidator';
 import { TelemetrySynchronizer } from '../services/synchronizer/TelemetrySynchronizer';
 import { IDataSource, ConnectionStatus } from '../services/dataSource/IDataSource';
@@ -40,6 +41,7 @@ interface MonitoringStoreState {
   totalReceivedPackets: number;
   droppedPacketsCount: number;
   outOfOrderCount: number;
+  conflictDemoActive: boolean;
 
   // Filter & Search
   searchQuery: string;
@@ -85,6 +87,9 @@ interface MonitoringStoreState {
   // Simulation Controls (Part 2 Bridge)
   togglePauseSimulation: () => void;
   setSimulationSpeed: (speed: number) => void;
+  startConflictDemo: () => void;
+  stopConflictDemo: () => void;
+  executeTacticalManeuver: (uavId: string, adjustment: ResolutionAdjustment) => void;
 
   // Internal Data Pipeline
   ingestMessage: (msg: IngestibleMessage) => void;
@@ -108,7 +113,7 @@ export const useMonitoringStore = create<MonitoringStoreState>((set, get) => ({
   mode: 'DEMO',
   connectionStatus: 'DISCONNECTED',
   connectionMessage: 'Chưa kết nối',
-  wsUrl: 'ws://localhost:8080/utm/telemetry',
+  wsUrl: 'ws://localhost:8000/ws/telemetry',
   cesiumIonToken: '',
 
   uavStates: {},
@@ -131,6 +136,7 @@ export const useMonitoringStore = create<MonitoringStoreState>((set, get) => ({
   totalReceivedPackets: 0,
   droppedPacketsCount: 0,
   outOfOrderCount: 0,
+  conflictDemoActive: false,
 
   searchQuery: '',
   statusFilter: 'ALL',
@@ -252,6 +258,60 @@ export const useMonitoringStore = create<MonitoringStoreState>((set, get) => ({
     }
   },
 
+  startConflictDemo: () => {
+    const store = get();
+    if (store.mode !== 'DEMO' || !(activeDataSource instanceof DemoDataSource)) {
+      store.setMode('DEMO');
+    }
+    if (activeDataSource instanceof DemoDataSource) {
+      activeDataSource.startConflictDemo();
+    }
+    set((state) => ({
+      conflictDemoActive: true,
+      simStatus: {
+        ...state.simStatus,
+        status: 'RUNNING',
+      },
+      cameraTarget: {
+        latitude: 16.0612,
+        longitude: 108.2245,
+        altitude_m: 340,
+        heading_deg: 10,
+        timestamp: Date.now(),
+      },
+    }));
+  },
+
+  stopConflictDemo: () => {
+    if (activeDataSource instanceof DemoDataSource) {
+      activeDataSource.stopConflictDemo();
+    }
+    set({ conflictDemoActive: false });
+  },
+
+  executeTacticalManeuver: (uavId: string, adjustment: ResolutionAdjustment) => {
+    if (activeDataSource instanceof DemoDataSource) {
+      activeDataSource.applyTacticalManeuver(uavId, adjustment);
+    }
+    const detailText =
+      adjustment.action_type === 'ALTITUDE_CHANGE'
+        ? `lệnh leo cao ${adjustment.altitude_delta_m ?? 35}m (đích ${adjustment.target_altitude_m}m)`
+        : `lệnh chuyển hướng +${adjustment.heading_delta_deg ?? 35}°`;
+    const alert: MonitoringAlert = {
+      alert_id: `ALT-MANEUVER-${Date.now()}`,
+      severity: 'INFO',
+      source: 'TACTICAL_CONFLICT_PART5',
+      uav_id: uavId,
+      title: `Đang thực thi né xung đột (${uavId})`,
+      description: `Đã truyền ${detailText} tới ${uavId}. Theo dõi tách phân cách an toàn trên 3D.`,
+      timestamp: new Date().toISOString(),
+      acknowledged: false,
+    };
+    set((state) => ({
+      alerts: [alert, ...state.alerts].slice(0, 50),
+    }));
+  },
+
   setMode: (newMode: 'DEMO' | 'LIVE') => {
     const currentMode = get().mode;
     if (currentMode === newMode && activeDataSource) return;
@@ -263,6 +323,9 @@ export const useMonitoringStore = create<MonitoringStoreState>((set, get) => ({
 
     set({
       mode: newMode,
+      uavStates: {},
+      selectedUavId: null,
+      conflictDemoActive: false,
       connectionStatus: 'CONNECTING',
       connectionMessage: `Đang chuyển sang chế độ ${newMode}...`,
     });
@@ -349,12 +412,26 @@ export const useMonitoringStore = create<MonitoringStoreState>((set, get) => ({
         currentAlerts = [recoverAlert, ...state.alerts.slice(0, 49)];
       }
 
+      const isFirstLiveUav = state.mode === 'LIVE' && Object.keys(state.uavStates).length === 0;
+
       set({
         uavStates: newStates,
         simClockIso: validMsg.timestamp,
         alerts: currentAlerts,
         droppedPacketsCount: state.droppedPacketsCount + gapDetected,
         outOfOrderCount: state.outOfOrderCount + (isOutOfOrder ? 1 : 0),
+        ...(isFirstLiveUav
+          ? {
+              selectedUavId: validMsg.uav_id,
+              cameraTarget: {
+                latitude: validMsg.position.latitude,
+                longitude: validMsg.position.longitude,
+                altitude_m: Math.max(validMsg.position.altitude_m + 180, 220),
+                heading_deg: 20,
+                timestamp: Date.now(),
+              },
+            }
+          : {}),
       });
 
       // Export verified snapshot to Part 5 bridge

@@ -12,6 +12,7 @@ import {
 import { Part5InputFeed } from '../types/monitoring';
 import { tacticalClient } from '../services/tactical/tacticalClient';
 import { part5Bridge } from '../services/part5Bridge/Part5ExportBridge';
+import { useMonitoringStore } from './useMonitoringStore';
 
 interface TacticalStoreState {
   conflicts: ConflictDetectionResult[];
@@ -62,9 +63,13 @@ export const useTacticalStore = create<TacticalStoreState>((set, get) => ({
   closeReportModal: () => set({ reportModalSessionId: null }),
 
   approveResolution: async (sessionId: string, optionId: string) => {
+    const currentSession = get().sessions[sessionId];
+    const chosenOption = currentSession?.proposed_options.find((o) => o.option_id === optionId);
+
     const updated = await tacticalClient.approveOption(sessionId, optionId);
     if (updated) {
       set((state) => ({
+        previewedOption: chosenOption || state.previewedOption,
         sessions: {
           ...state.sessions,
           [sessionId]: updated,
@@ -77,6 +82,7 @@ export const useTacticalStore = create<TacticalStoreState>((set, get) => ({
         if (!s) return state;
         const nowIso = new Date().toISOString();
         return {
+          previewedOption: chosenOption || state.previewedOption,
           sessions: {
             ...state.sessions,
             [sessionId]: {
@@ -90,6 +96,10 @@ export const useTacticalStore = create<TacticalStoreState>((set, get) => ({
           },
         };
       });
+    }
+
+    if (chosenOption) {
+      useMonitoringStore.getState().executeTacticalManeuver(chosenOption.target_uav_id, chosenOption.adjustment);
     }
   },
 
@@ -125,7 +135,9 @@ export const useTacticalStore = create<TacticalStoreState>((set, get) => ({
   processFeedSnapshot: async (feed: Part5InputFeed) => {
     const useAi = get().aiEnabled;
     const { conflicts, sessions } = await tacticalClient.sendFeed(feed, useAi);
-    const sessionsMap: Record<string, TacticalResolutionSession> = { ...get().sessions };
+    const prevSessions = get().sessions;
+    const sessionsMap: Record<string, TacticalResolutionSession> = { ...prevSessions };
+    const incomingIds = new Set(sessions.map((s) => s.session_id));
 
     sessions.forEach((s) => {
       // Preserve local approval state if already executing
@@ -136,15 +148,38 @@ export const useTacticalStore = create<TacticalStoreState>((set, get) => ({
           lifecycle_state: existing.lifecycle_state,
           selected_option_id: existing.selected_option_id,
           approved_by: existing.approved_by,
+          approval_timestamp: existing.approval_timestamp,
+          verification_details: existing.verification_details,
         };
       } else {
         sessionsMap[s.session_id] = s;
       }
     });
 
+    // If an EXECUTING session's conflict has cleared in live telemetry -> mark VERIFIED
+    let clearedExecuting = false;
+    Object.values(sessionsMap).forEach((s) => {
+      if (s.lifecycle_state === 'EXECUTING' && !incomingIds.has(s.session_id)) {
+        clearedExecuting = true;
+        sessionsMap[s.session_id] = {
+          ...s,
+          lifecycle_state: 'VERIFIED',
+          verification_status: 'SAFE_SEPARATION_RESTORED',
+          verification_details: 'Đã xác nhận tách phân cách an toàn thực tế qua telemetry Khối 4.',
+          updated_at: new Date().toISOString(),
+        };
+      }
+    });
+
+    const nextSelectedId =
+      get().selectedSessionId ||
+      (sessions.length > 0 ? sessions[0].session_id : null);
+
     set({
       conflicts,
       sessions: sessionsMap,
+      selectedSessionId: nextSelectedId,
+      previewedOption: clearedExecuting ? null : get().previewedOption,
       backendConnected: tacticalClient.getIsOnline(),
       lastEvaluationTime: new Date().toISOString(),
       // Auto-open panel if critical conflict appears and not yet opened

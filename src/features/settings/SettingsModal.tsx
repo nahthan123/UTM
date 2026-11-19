@@ -24,13 +24,13 @@ const SettingsModalContent: React.FC = () => {
   const [inputToken, setInputToken] = useState(cesiumIonToken);
 
   const handleSave = () => {
-    setWsUrl(inputWsUrl.trim() || 'ws://localhost:8080/utm/telemetry');
+    setWsUrl(inputWsUrl.trim() || 'ws://localhost:8000/ws/telemetry');
     setCesiumIonToken(inputToken);
     setSettingsModalOpen(false);
   };
 
   const handleSaveAndConnect = () => {
-    setWsUrl(inputWsUrl.trim() || 'ws://localhost:8080/utm/telemetry');
+    setWsUrl(inputWsUrl.trim() || 'ws://localhost:8000/ws/telemetry');
     setCesiumIonToken(inputToken);
     setMode('LIVE');
     setSettingsModalOpen(false);
@@ -67,11 +67,11 @@ const SettingsModalContent: React.FC = () => {
               type="text"
               value={inputWsUrl}
               onChange={(e) => setInputWsUrl(e.target.value)}
-              placeholder="ws://localhost:8080/utm/telemetry"
+              placeholder="ws://localhost:8000/ws/telemetry"
               className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 font-mono focus:outline-none focus:border-cyan-500"
             />
             <p className="text-[11px] text-slate-500">
-              Nhập URL WebSocket nguồn phát mô phỏng trong mạng LAN hoặc localhost (vd: ws://127.0.0.1:8765 hoặc ws://localhost:8080/utm/telemetry). Tự động nhận cả WGS84 lẫn tọa độ Gazebo ENU (x, y, z).
+              Nhập URL WebSocket nguồn phát mô phỏng trong mạng LAN hoặc localhost (vd: ws://localhost:8000/ws/telemetry cho PX4/FastAPI 10Hz, hoặc ws://192.168.1.x:8000/ws/telemetry). Tự động nhận chuẩn PX4 phẳng, ASTM F3411 và Gazebo ENU (x, y, z).
             </p>
           </div>
 

@@ -145,38 +145,71 @@ export class TacticalApiClient {
         const distV = Math.abs(a.position.altitude_m - b.position.altitude_m);
 
         if (distH < 250 && distV < 30) {
-          const tCpa = Math.max(1, Math.round(distH / 15));
-          const conflictId = `CONF-${a.uav_id}-${b.uav_id}-${tCpa}`;
+          const tCpa = Math.max(1, Math.round(distH / 12));
+          const sortedPair = [a.uav_id, b.uav_id].sort();
+          const conflictId = `CONF-${sortedPair[0]}-${sortedPair[1]}`;
+          const midLat = (a.position.latitude + b.position.latitude) / 2;
+          const midLon = (a.position.longitude + b.position.longitude) / 2;
+          const midAlt = (a.position.altitude_m + b.position.altitude_m) / 2;
+
           const c: ConflictDetectionResult = {
             conflict_id: conflictId,
             uav_a_id: a.uav_id,
             uav_b_id: b.uav_id,
-            severity: distH < 100 ? 'CRITICAL' : 'WARNING',
+            severity: distH < 140 ? 'CRITICAL' : 'WARNING',
             detected_at: new Date().toISOString(),
             time_to_cpa_seconds: tCpa,
             cpa_timestamp: new Date(Date.now() + tCpa * 1000).toISOString(),
             cpa_horizontal_distance_m: Math.round(distH),
             cpa_vertical_distance_m: Math.round(distV),
             cpa_3d_distance_m: Math.round(Math.sqrt(distH * distH + distV * distV)),
-            uav_a_position_at_cpa: a.position,
+            uav_a_position_at_cpa: {
+              latitude: midLat,
+              longitude: midLon,
+              altitude_m: midAlt,
+              altitude_reference: a.position.altitude_reference,
+            },
             uav_b_position_at_cpa: b.position,
             data_confidence: a.data_quality.confidence,
             requires_altitude_alignment: a.position.altitude_reference !== b.position.altitude_reference,
-            description: `Dự báo vi phạm phân cách giữa ${a.uav_id} và ${b.uav_id} (CPA=${Math.round(distH)}m)`,
+            description: `Dự báo vi phạm phân cách giữa ${a.uav_id} và ${b.uav_id} (CPA=${Math.round(distH)}m, ΔZ=${Math.round(distV)}m)`,
           };
           conflicts.push(c);
 
-          const opt: ResolutionOption = {
-            option_id: `OPT-${conflictId}-01`,
+          const headingRad = ((a.velocity.heading_deg ?? 90) * Math.PI) / 180;
+          const speed = Math.max(10, a.velocity.ground_speed_mps || 12);
+          const metersPerDegLat = 111319.5;
+          const metersPerDegLon = 111319.5 * Math.cos((a.position.latitude * Math.PI) / 180);
+          const nowMs = Date.now();
+
+          // Option 1: Vertical climb +35m with 7-point 3D trajectory
+          const climbDelta = 35;
+          const altTrajectory = Array.from({ length: 7 }, (_, stepIdx) => {
+            const tSec = stepIdx * 4;
+            const forwardM = speed * tSec;
+            const climbFactor = Math.min(1, stepIdx / 3);
+            const dNorth = Math.cos(headingRad) * forwardM;
+            const dEast = Math.sin(headingRad) * forwardM;
+            return {
+              time_offset_s: tSec,
+              timestamp: new Date(nowMs + tSec * 1000).toISOString(),
+              latitude: a.position.latitude + dNorth / metersPerDegLat,
+              longitude: a.position.longitude + dEast / metersPerDegLon,
+              altitude_m: Math.round((a.position.altitude_m + climbDelta * climbFactor) * 10) / 10,
+            };
+          });
+
+          const optAltitude: ResolutionOption = {
+            option_id: `OPT-${conflictId}-ALT`,
             conflict_id: conflictId,
             target_uav_id: a.uav_id,
             uav_type: a.uav_profile?.uav_type || 'MULTIROTOR',
             adjustment: {
               action_type: 'ALTITUDE_CHANGE',
-              target_altitude_m: a.position.altitude_m + 30,
-              altitude_delta_m: 30,
+              target_altitude_m: Math.round(a.position.altitude_m + climbDelta),
+              altitude_delta_m: climbDelta,
             },
-            projected_trajectory: [],
+            projected_trajectory: altTrajectory,
             constraint_check: {
               resolves_primary_conflict: true,
               causes_secondary_conflict: false,
@@ -188,11 +221,59 @@ export class TacticalApiClient {
               rejection_reasons: [],
             },
             plan_deviation_score: 0.1,
-            risk_reduction_score: 0.95,
-            composite_rank_score: 0.91,
+            risk_reduction_score: 0.96,
+            composite_rank_score: 0.93,
             selection_rationale: useAi
-              ? '[AI Assisted] Đề xuất leo cao +30m. Điểm: 91/100, giải tỏa xung đột tối ưu.'
-              : '[Quy tắc cơ sở] Đề xuất phân cách đứng +30m theo quy tắc an toàn.',
+              ? `[AI Assisted] Đề xuất ${a.uav_id} leo cao +${climbDelta}m vượt tầng an toàn. Điểm: 93/100.`
+              : `[Quy tắc cơ sở] Phân cách đứng +${climbDelta}m vượt trên ${b.uav_id}.`,
+            status: 'FEASIBLE',
+          };
+
+          // Option 2: Lateral heading maneuver +35 deg right with 7-point 3D trajectory
+          const headingDelta = 35;
+          const turnRad = (((a.velocity.heading_deg ?? 90) + headingDelta) * Math.PI) / 180;
+          const latTrajectory = Array.from({ length: 7 }, (_, stepIdx) => {
+            const tSec = stepIdx * 4;
+            const forwardM = speed * tSec;
+            const arcAngle = stepIdx <= 3 ? turnRad : headingRad;
+            const dNorth = Math.cos(arcAngle) * forwardM;
+            const dEast = Math.sin(arcAngle) * forwardM;
+            return {
+              time_offset_s: tSec,
+              timestamp: new Date(nowMs + tSec * 1000).toISOString(),
+              latitude: a.position.latitude + dNorth / metersPerDegLat,
+              longitude: a.position.longitude + dEast / metersPerDegLon,
+              altitude_m: a.position.altitude_m,
+            };
+          });
+
+          const optHeading: ResolutionOption = {
+            option_id: `OPT-${conflictId}-HDG`,
+            conflict_id: conflictId,
+            target_uav_id: a.uav_id,
+            uav_type: a.uav_profile?.uav_type || 'MULTIROTOR',
+            adjustment: {
+              action_type: 'HEADING_CHANGE',
+              target_heading_deg: Math.round(((a.velocity.heading_deg ?? 90) + headingDelta) % 360),
+              heading_delta_deg: headingDelta,
+            },
+            projected_trajectory: latTrajectory,
+            constraint_check: {
+              resolves_primary_conflict: true,
+              causes_secondary_conflict: false,
+              breaches_restricted_zone: false,
+              within_performance_envelope: true,
+              within_plan_deviation_budget: true,
+              data_freshness_adequate: true,
+              is_feasible: true,
+              rejection_reasons: [],
+            },
+            plan_deviation_score: 0.22,
+            risk_reduction_score: 0.89,
+            composite_rank_score: 0.84,
+            selection_rationale: useAi
+              ? `[AI Assisted] Đề xuất ${a.uav_id} rẽ phải +${headingDelta}° vòng tránh ngang. Điểm: 84/100.`
+              : `[Quy tắc cơ sở] Lệch hướng phải +${headingDelta}° tránh giao cắt trực diện.`,
             status: 'FEASIBLE',
           };
 
@@ -200,8 +281,8 @@ export class TacticalApiClient {
             session_id: `SES-${conflictId}`,
             conflict: c,
             lifecycle_state: 'PENDING_APPROVAL',
-            proposed_options: [opt],
-            selected_option_id: opt.option_id,
+            proposed_options: [optAltitude, optHeading],
+            selected_option_id: optAltitude.option_id,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           });

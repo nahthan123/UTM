@@ -13,9 +13,9 @@ export class LiveWebSocketDataSource implements IDataSource {
   private isIntentionallyClosed = false;
 
   constructor(serverUrl?: string) {
-    // Default fallback to environment variable or localhost:8080
+    // Default fallback to environment variable or PX4/FastAPI localhost:8000/ws/telemetry
     const envUrl = typeof import.meta !== 'undefined' && import.meta.env ? (import.meta.env.VITE_WS_TELEMETRY_URL as string) : undefined;
-    this.serverUrl = serverUrl || envUrl || 'ws://localhost:8080/utm/telemetry';
+    this.serverUrl = serverUrl || envUrl || 'ws://localhost:8000/ws/telemetry';
   }
 
   public get isRunning(): boolean {

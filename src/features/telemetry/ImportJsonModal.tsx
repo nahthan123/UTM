@@ -85,6 +85,57 @@ export const ImportJsonModal: React.FC<ImportJsonModalProps> = ({ isOpen, onClos
     2
   );
 
+  const samplePx4FastApiJson = JSON.stringify(
+    {
+      uav_id: 'uav-1',
+      system_id: 1,
+      status: {
+        connected: true,
+        armed: true,
+        flight_mode: 'AUTO_HOLD',
+        landed_state: 'IN_AIR',
+      },
+      position: {
+        latitude: 16.0544,
+        longitude: 108.2022,
+        altitude_msl_m: 12.78,
+        relative_altitude_m: 2.78,
+      },
+      local_position: {
+        x_m: 0.015,
+        y_m: -0.008,
+        z_m: -2.78,
+      },
+      velocity: {
+        vx_m_s: 0.05,
+        vy_m_s: 0.02,
+        vz_m_s: 0.0,
+        groundspeed_m_s: 0.05,
+        climb_rate_m_s: 0.0,
+      },
+      attitude: {
+        roll_deg: -0.02,
+        pitch_deg: 0.01,
+        yaw_deg: 90.54,
+        heading_deg: 90.0,
+      },
+      battery: {
+        voltage_v: 16.8,
+        remaining_percent: 98.5,
+      },
+      gps: {
+        fix_type: 3,
+        satellites: 10,
+      },
+      timestamps: {
+        source_timestamp_ms: 138204000,
+        backend_timestamp: '2026-11-18T16:19:30.123456Z',
+      },
+    },
+    null,
+    2
+  );
+
   const [rawText, setRawText] = useState(sampleAstmJson);
   const [analysis, setAnalysis] = useState<PhuocFieldAnalysis | null>(null);
   const [observedPreview, setObservedPreview] = useState<ObservedUAVState | null>(null);
@@ -288,6 +339,13 @@ export const ImportJsonModal: React.FC<ImportJsonModalProps> = ({ isOpen, onClos
                 className="px-2.5 py-1.5 bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded border border-slate-800 font-mono text-[11px]"
               >
                 Mẫu Gazebo ENU (x, y, z)
+              </button>
+
+              <button
+                onClick={() => setRawText(samplePx4FastApiJson)}
+                className="px-2.5 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 hover:text-emerald-100 rounded border border-emerald-800/80 font-mono text-[11px]"
+              >
+                Mẫu PX4 / FastAPI (10Hz)
               </button>
             </div>
 

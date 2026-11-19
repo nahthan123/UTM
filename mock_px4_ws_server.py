@@ -1,0 +1,175 @@
+"""
+Mock PX4 / FastAPI WebSocket Telemetry Server (10Hz)
+Matches the exact JSON payload schema and endpoint (ws://localhost:8000/ws/telemetry)
+of the Khối 2 SITL/Gazebo backend for offline integration testing of Khối 4 (Web 3D) and Postman.
+
+Run:
+    python mock_px4_ws_server.py
+"""
+
+import asyncio
+import math
+import time
+from datetime import datetime, timezone
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+app = FastAPI(title="Mock PX4 Telemetry Stream (10Hz)")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Flight waypoints around Dragon Bridge & Han River, Da Nang
+# (Starts near Dragon Bridge West, climbs to 75m AGL, loops over Han River & Song Han Bridge)
+HOME_LAT = 16.0608
+HOME_LON = 108.2225
+GROUND_MSL = 10.0
+
+WAYPOINTS = [
+    (16.0608, 108.2225, 0.0),    # Home pad (APEC Park / Dragon Bridge West)
+    (16.0608, 108.2225, 68.0),   # Vertical takeoff to 68m AGL
+    (16.0612, 108.2262, 75.0),   # Across Dragon Bridge (East)
+    (16.0721, 108.2268, 82.0),   # Along Han River to Song Han Bridge
+    (16.0715, 108.2228, 76.0),   # Bach Dang Waterfront
+    (16.0608, 108.2225, 68.0),   # Return above Home
+]
+
+
+def calc_bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    d_lat = (lat2 - lat1) * 111319.5
+    d_lon = (lon2 - lon1) * 111319.5 * math.cos(math.radians(lat1))
+    if math.hypot(d_lat, d_lon) < 0.05:
+        return 90.0
+    ang = math.degrees(math.atan2(d_lon, d_lat))
+    return (ang + 360.0) % 360.0
+
+
+@app.get("/")
+async def root():
+    return {
+        "service": "Mock PX4 Telemetry Server (10Hz)",
+        "websocket": "ws://localhost:8000/ws/telemetry",
+        "status": "running",
+    }
+
+
+@app.websocket("/ws/telemetry")
+async def telemetry_ws(websocket: WebSocket):
+    await websocket.accept()
+    print("[Mock PX4 WS] Client connected to /ws/telemetry (10Hz)")
+
+    start_wall = time.time()
+    seg_idx = 0
+    seg_t = 0.0
+    dt = 0.1  # 10 Hz
+    battery = 99.0
+
+    try:
+        while True:
+            lat_a, lon_a, alt_a = WAYPOINTS[seg_idx]
+            lat_b, lon_b, alt_b = WAYPOINTS[(seg_idx + 1) % len(WAYPOINTS)]
+
+            d_north = (lat_b - lat_a) * 111319.5
+            d_east = (lon_b - lon_a) * 111319.5 * math.cos(math.radians(lat_a))
+            d_alt = alt_b - alt_a
+            seg_dist = max(1.0, math.sqrt(d_north**2 + d_east**2 + d_alt**2))
+
+            speed_mps = 4.5 if seg_idx == 0 else 14.0
+            seg_duration = max(3.5, seg_dist / speed_mps)
+            seg_t += dt / seg_duration
+
+            if seg_t >= 1.0:
+                seg_t = 0.0
+                seg_idx = (seg_idx + 1) % len(WAYPOINTS)
+                if seg_idx == 0:
+                    battery = 99.0
+                continue
+
+            lat = lat_a + (lat_b - lat_a) * seg_t
+            lon = lon_a + (lon_b - lon_a) * seg_t
+            rel_alt = max(0.0, alt_a + (alt_b - alt_a) * seg_t)
+            alt_msl = GROUND_MSL + rel_alt
+
+            vx = d_north / seg_duration
+            vy = d_east / seg_duration
+            climb_rate = d_alt / seg_duration
+            groundspeed = math.hypot(vx, vy)
+            heading = calc_bearing_deg(lat_a, lon_a, lat_b, lon_b)
+
+            if seg_idx == 0:
+                flight_mode = "AUTO_TAKEOFF"
+                landed_state = "TAKING_OFF" if rel_alt < 5.0 else "IN_AIR"
+            elif seg_idx == len(WAYPOINTS) - 1:
+                flight_mode = "AUTO_HOLD"
+                landed_state = "IN_AIR" if rel_alt > 1.0 else "ON_GROUND"
+            else:
+                flight_mode = "AUTO_MISSION"
+                landed_state = "IN_AIR"
+
+            battery = max(20.0, battery - 0.008)
+            elapsed_ms = int((time.time() - start_wall) * 1000)
+            now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+            local_x = (lat - HOME_LAT) * 111319.5
+            local_y = (lon - HOME_LON) * 111319.5 * math.cos(math.radians(HOME_LAT))
+
+            packet = {
+                "uav_id": "uav-1",
+                "system_id": 1,
+                "status": {
+                    "connected": True,
+                    "armed": True,
+                    "flight_mode": flight_mode,
+                    "landed_state": landed_state,
+                },
+                "position": {
+                    "latitude": round(lat, 7),
+                    "longitude": round(lon, 7),
+                    "altitude_msl_m": round(alt_msl, 2),
+                    "relative_altitude_m": round(rel_alt, 2),
+                },
+                "local_position": {
+                    "x_m": round(local_x, 3),
+                    "y_m": round(local_y, 3),
+                    "z_m": round(-rel_alt, 3),
+                },
+                "velocity": {
+                    "vx_m_s": round(vx, 2),
+                    "vy_m_s": round(vy, 2),
+                    "vz_m_s": round(-climb_rate, 2),
+                    "groundspeed_m_s": round(groundspeed, 2),
+                    "climb_rate_m_s": round(climb_rate, 2),
+                },
+                "attitude": {
+                    "roll_deg": round(math.sin(elapsed_ms / 1500.0) * 1.8, 2),
+                    "pitch_deg": round(-3.5 if groundspeed > 2.0 else 0.2, 2),
+                    "yaw_deg": round(heading, 2),
+                    "heading_deg": round(heading, 1),
+                },
+                "battery": {
+                    "voltage_v": round(14.8 + (battery / 100.0) * 2.0, 2),
+                    "remaining_percent": round(battery, 1),
+                },
+                "gps": {
+                    "fix_type": 3,
+                    "satellites": 10,
+                },
+                "timestamps": {
+                    "source_timestamp_ms": elapsed_ms,
+                    "backend_timestamp": now_iso,
+                },
+            }
+
+            await websocket.send_json(packet)
+            await asyncio.sleep(dt)
+    except WebSocketDisconnect:
+        print("[Mock PX4 WS] Client disconnected")
+
+
+if __name__ == "__main__":
+    print("Starting Mock PX4 Telemetry Server on ws://localhost:8000/ws/telemetry (10Hz)...")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
