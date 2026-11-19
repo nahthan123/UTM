@@ -8,6 +8,24 @@ import vn.utm.service.AuthRequiredException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> status(org.springframework.web.server.ResponseStatusException ex) {
+        return ResponseEntity.status(ex.getStatusCode()).body(Map.of("message",
+                Objects.requireNonNullElse(ex.getReason(), "Yêu cầu không hợp lệ")));
+    }
+
+    @ExceptionHandler({org.springframework.http.converter.HttpMessageNotReadableException.class,
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> malformed(Exception ex) {
+        return Map.of("message", "Dữ liệu hoặc định dạng yêu cầu không hợp lệ");
+    }
+
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> conflict(Exception ex) {
+        return Map.of("message", "Dữ liệu trùng lặp hoặc liên kết không hợp lệ");
+    }
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> validation(MethodArgumentNotValidException ex) {

@@ -1,225 +1,192 @@
 <!doctype html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#eaf7ff">
-  <meta name="description" content="Cổng đăng ký đơn vị bay cá nhân, doanh nghiệp và chuyến bay UAV">
-  <title>SkyPermit — Đăng ký chuyến bay UAV</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Cổng đăng ký người vận hành, phương tiện UAV và kế hoạch bay 4D">
+  <title>SkyPermit · Đăng ký hoạt động bay UAV</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/auth.css">
+  <link rel="stylesheet" href="/portal.css">
+  <script src="/app.js" defer></script>
 </head>
 <body>
-  <div class="sky-glow"></div>
-  <section class="auth-root" id="authRoot">
-    <div class="auth-showcase">
-      <a class="auth-brand" href="#" aria-label="SkyPermit">
-        <span class="brand-icon"><svg viewBox="0 0 40 40"><path d="M7 25c5-8 11-11 26-12-6 3-10 6-13 10l8 3-4 3-8-2-5 5-4-1 2-6H7Z"/></svg></span>
-        <span><strong>SkyPermit</strong><small>UTM REGISTRATION</small></span>
-      </a>
-      <div class="auth-copy">
-        <span class="auth-kicker">NỀN TẢNG QUẢN LÝ BAY UAV</span>
-        <h1>Mọi hành trình an toàn<br>bắt đầu từ <em>đây.</em></h1>
-        <p>Đăng ký đơn vị khai thác, lập kế hoạch và theo dõi chuyến bay trên một nền tảng thống nhất.</p>
-        <div class="auth-benefits">
-          <span><i>✓</i> Đăng ký hồ sơ trực tuyến</span>
-          <span><i>✓</i> Gửi lệnh mô phỏng tức thời</span>
-          <span><i>✓</i> Giám sát hành trình trực tiếp</span>
-        </div>
-      </div>
-      <div class="auth-illustration" aria-hidden="true">
-        <div class="auth-orbit one"></div><div class="auth-orbit two"></div>
-        <div class="auth-drone"><span></span><i></i><b></b><em></em></div>
-        <span class="auth-cloud cloud-one"></span><span class="auth-cloud cloud-two"></span>
-        <div class="auth-route"><i></i><b></b></div>
-      </div>
-      <small class="auth-copyright">© 2026 SkyPermit · Hệ thống đăng ký hoạt động bay UAV</small>
-    </div>
-
-    <div class="auth-panel">
-      <div class="auth-card">
-        <div class="auth-mobile-brand"><span class="brand-icon"><svg viewBox="0 0 40 40"><path d="M7 25c5-8 11-11 26-12-6 3-10 6-13 10l8 3-4 3-8-2-5 5-4-1 2-6H7Z"/></svg></span><strong>SkyPermit</strong></div>
-        <div class="auth-tabs" role="tablist">
-          <button class="active" type="button" data-auth-tab="login">Đăng nhập</button>
-          <button type="button" data-auth-tab="register">Đăng ký</button>
-        </div>
-
-        <form class="auth-form active" id="loginForm">
-          <div class="auth-heading"><span>CHÀO MỪNG TRỞ LẠI</span><h2>Đăng nhập hệ thống</h2><p>Tiếp tục quản lý các hoạt động bay của bạn.</p></div>
-          <label>Email đăng nhập<input name="email" type="email" autocomplete="email" required placeholder="tenban@email.com"></label>
-          <label>Mật khẩu<span class="password-wrap"><input name="password" type="password" autocomplete="current-password" required placeholder="Nhập mật khẩu"><button type="button" class="password-toggle" aria-label="Hiện mật khẩu">◉</button></span></label>
-          <div class="auth-options"><label><input type="checkbox" name="remember"> Ghi nhớ đăng nhập</label><button type="button" class="text-action" id="forgotPassword">Quên mật khẩu?</button></div>
-          <button class="primary auth-submit" type="submit">Đăng nhập <span>→</span></button>
-          <p class="auth-switch">Chưa có tài khoản? <button type="button" data-auth-tab="register">Đăng ký đơn vị bay</button></p>
-        </form>
-
-        <form class="auth-form" id="registerForm">
-          <div class="auth-heading"><span>KHỞI TẠO TÀI KHOẢN</span><h2>Đăng ký đơn vị bay</h2><p>Chọn loại hình phù hợp với đơn vị khai thác.</p></div>
-          <fieldset class="account-type-picker"><legend>Loại tài khoản</legend>
-            <label><input type="radio" name="accountType" value="INDIVIDUAL" checked><span><i>♙</i><b>Cá nhân</b><small>Người khai thác độc lập</small></span></label>
-            <label><input type="radio" name="accountType" value="BUSINESS"><span><i>▦</i><b>Doanh nghiệp</b><small>Tổ chức hoặc công ty</small></span></label>
-          </fieldset>
-          <div class="auth-fields" id="individualFields">
-            <label>Họ và tên *<input name="fullName" required placeholder="Nguyễn Văn An"></label>
-            <label>CCCD / Hộ chiếu *<input name="nationalId" required placeholder="079203001234"></label>
-          </div>
-          <div class="auth-fields business-fields" id="businessFields" hidden>
-            <label class="wide">Tên doanh nghiệp *<input name="companyName" disabled placeholder="Công ty TNHH Công nghệ Bầu Trời"></label>
-            <label>Mã số thuế *<input name="taxCode" disabled placeholder="0312345678"></label>
-            <label>Người đại diện *<input name="representative" disabled placeholder="Nguyễn Văn An"></label>
-            <label class="wide">Giấy phép khai thác<input name="licenseNumber" disabled placeholder="GP-UAV-2026-001"></label>
-          </div>
-          <div class="auth-fields">
-            <label>Số điện thoại *<input name="phone" autocomplete="tel" required placeholder="0901 234 567"></label>
-            <label>Email *<input name="email" type="email" autocomplete="email" required placeholder="dieuhanh@email.vn"></label>
-            <label class="wide">Địa chỉ *<input name="address" required placeholder="Địa chỉ liên hệ hoặc trụ sở"></label>
-            <label>Mật khẩu *<input name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="Tối thiểu 8 ký tự"></label>
-            <label>Xác nhận mật khẩu *<input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="Nhập lại mật khẩu"></label>
-          </div>
-          <label class="terms"><input name="terms" type="checkbox" required> Tôi đồng ý với <a href="#">Điều khoản sử dụng</a> và <a href="#">Chính sách bảo mật</a>.</label>
-          <button class="primary auth-submit" type="submit">Tạo tài khoản <span>→</span></button>
-          <p class="auth-switch">Đã có tài khoản? <button type="button" data-auth-tab="login">Đăng nhập</button></p>
-        </form>
-      </div>
-    </div>
-  </section>
-
-  <div class="app-shell" id="appShell" hidden>
-  <aside class="sidebar" id="sidebar">
-    <a class="brand" href="#" data-page="overview">
-      <span class="brand-icon" aria-hidden="true">
-        <svg viewBox="0 0 40 40"><path d="M7 25c5-8 11-11 26-12-6 3-10 6-13 10l8 3-4 3-8-2-5 5-4-1 2-6H7Z"/></svg>
-      </span>
+<div id="notice" role="status" aria-live="polite"></div>
+<section class="auth-root" id="authRoot">
+  <div class="auth-showcase">
+    <a class="auth-brand" href="#" aria-label="SkyPermit">
+      <span class="brand-icon"><svg viewBox="0 0 40 40"><path d="M7 25c5-8 11-11 26-12-6 3-10 6-13 10l8 3-4 3-8-2-5 5-4-1 2-6H7Z"/></svg></span>
       <span><strong>SkyPermit</strong><small>UTM REGISTRATION</small></span>
     </a>
-
-    <nav aria-label="Điều hướng chính">
-      <button class="nav-item active" data-page="overview"><span>⌂</span>Tổng quan</button>
-      <button class="nav-item" data-page="companies"><span>▤</span>Hồ sơ đơn vị bay</button>
-      <button class="nav-item" data-page="flights"><span>↗</span>Đăng ký chuyến bay</button>
-      <button class="nav-item" data-page="monitor"><span>◎</span>Mô phỏng & giám sát</button>
-    </nav>
-
-    <div class="sidebar-foot">
-      <div class="support-card">
-        <span class="support-icon">?</span>
-        <strong>Cần hỗ trợ?</strong>
-        <p>Trung tâm điều phối trực tuyến 24/7</p>
-        <a href="mailto:support@skypermit.vn">Liên hệ hỗ trợ →</a>
+    <div class="auth-copy">
+      <span class="auth-kicker">NỀN TẢNG QUẢN LÝ BAY UAV</span>
+      <h1>Mọi hành trình an toàn<br>bắt đầu từ <em>đây.</em></h1>
+      <p>Khai báo phương tiện, lập kế hoạch bay 4D và quản lý hoạt động bay trên một nền tảng thống nhất.</p>
+      <div class="auth-benefits">
+        <span><i>✓</i> Đăng ký hồ sơ trực tuyến</span>
+        <span><i>✓</i> Lập quỹ đạo bay 4D</span>
+        <span><i>✓</i> Theo dõi trạng thái phê duyệt</span>
       </div>
-      <div class="operator"><span class="avatar" id="accountAvatar">--</span><div><b id="accountName">Tài khoản</b><small id="accountType">Đơn vị khai thác</small></div><button id="logoutButton" aria-label="Đăng xuất" title="Đăng xuất">↪</button></div>
     </div>
-  </aside>
-
-  <main>
-    <header class="topbar">
-      <button class="menu-button" id="menuButton" aria-label="Mở trình đơn">☰</button>
-      <div class="top-title"><span id="breadcrumb">Tổng quan</span><small>Cổng đăng ký hoạt động bay không người lái</small></div>
-      <div class="top-actions"><span class="system-status"><i></i>Hệ thống hoạt động</span><button class="bell" aria-label="Thông báo">♧<i></i></button><button class="primary small" data-page="flights">＋ Tạo chuyến bay</button></div>
-    </header>
-
-    <section class="page active" id="overview">
-      <div class="hero">
-        <div>
-          <span class="eyebrow">SKYPERMIT UTM PORTAL</span>
-          <h1>Đăng ký chuyến bay<br><em>nhanh chóng, minh bạch.</em></h1>
-          <p>Hoàn thiện hồ sơ đơn vị, khai báo hành trình và gửi lệnh bay đến hệ thống mô phỏng chỉ trong vài bước.</p>
-          <div class="hero-actions"><button class="primary" data-page="flights">Đăng ký chuyến bay <span>→</span></button><button class="soft" data-page="companies">Quản lý hồ sơ</button></div>
-        </div>
-        <div class="hero-visual" aria-hidden="true">
-          <div class="orbit o1"></div><div class="orbit o2"></div>
-          <div class="cloud c1"></div><div class="cloud c2"></div>
-          <div class="drone"><span></span><i></i><b></b><em></em></div>
-          <div class="route-line"><i></i></div>
-          <span class="pin p1"></span><span class="pin p2"></span>
-        </div>
-      </div>
-
-      <div class="stats">
-        <article><span class="stat-icon blue">▤</span><div><small>Hồ sơ đơn vị bay</small><strong id="companyCount">0</strong><p><i class="good"></i><span id="verifiedCount">0</span> hồ sơ đã xác thực</p></div></article>
-        <article><span class="stat-icon cyan">↗</span><div><small>Chuyến bay đã đăng ký</small><strong id="flightCount">0</strong><p><i class="good"></i>Cập nhật theo thời gian thực</p></div></article>
-        <article><span class="stat-icon violet">◎</span><div><small>Đang mô phỏng</small><strong id="simCount">0</strong><p><i class="live"></i>Kết nối hệ thống giám sát</p></div></article>
-      </div>
-
-      <div class="overview-grid">
-        <article class="panel journey-panel">
-          <div class="panel-heading"><div><span class="eyebrow">QUY TRÌNH ĐĂNG KÝ</span><h2>Bắt đầu trong 3 bước</h2></div><span class="secure">✓ Dữ liệu được bảo mật</span></div>
-          <div class="journey">
-            <button class="journey-step" data-page="companies"><span>01</span><i>▤</i><div><b>Hồ sơ đơn vị bay</b><small>Thông tin định danh và giấy phép</small></div><em>→</em></button>
-            <button class="journey-step" data-page="flights"><span>02</span><i>⌖</i><div><b>Khai báo hành trình</b><small>Điểm đi, điểm đến và loại drone</small></div><em>→</em></button>
-            <button class="journey-step" data-page="monitor"><span>03</span><i>◎</i><div><b>Gửi lệnh & giám sát</b><small>Theo dõi dữ liệu mô phỏng trực tiếp</small></div><em>→</em></button>
-          </div>
-        </article>
-        <article class="panel recent-panel">
-          <div class="panel-heading"><div><span class="eyebrow">HOẠT ĐỘNG GẦN ĐÂY</span><h2>Chuyến bay mới nhất</h2></div><button class="link-button" data-page="flights">Xem tất cả</button></div>
-          <div id="recentFlights" class="recent-list"></div>
-        </article>
-      </div>
-    </section>
-
-    <section class="page" id="companies">
-      <div class="page-heading"><div><span class="eyebrow">OPERATOR PROFILE</span><h1>Hồ sơ đơn vị bay</h1><p>Thông tin định danh đã đăng ký với hệ thống SkyPermit.</p></div><span class="step-badge">ĐÃ XÁC THỰC</span></div>
-      <div class="profile-layout">
-        <article class="panel profile-card">
-          <div class="profile-cover"><span class="profile-logo" id="profileAvatar">--</span><div><span class="eyebrow" id="profileTypeLabel">ĐƠN VỊ KHAI THÁC</span><h2 id="profileName">Đang tải...</h2><p id="profileEmail">—</p></div><span class="verified-badge">✓ Hồ sơ hợp lệ</span></div>
-          <div class="profile-details">
-            <div><small>MÃ ĐỊNH DANH / MÃ SỐ THUẾ</small><b id="profileTaxCode">—</b></div>
-            <div><small>NGƯỜI ĐẠI DIỆN</small><b id="profileRepresentative">—</b></div>
-            <div><small>SỐ ĐIỆN THOẠI</small><b id="profilePhone">—</b></div>
-            <div><small>GIẤY PHÉP KHAI THÁC</small><b id="profileLicense">Chưa cập nhật</b></div>
-            <div class="wide"><small>ĐỊA CHỈ</small><b id="profileAddress">—</b></div>
-          </div>
-        </article>
-        <aside class="panel profile-note"><span>✓</span><h3>Hồ sơ đã được xác thực</h3><p>Bạn có thể sử dụng hồ sơ này để đăng ký và gửi lệnh cho các chuyến bay UAV.</p><button class="primary" data-page="flights">Tạo chuyến bay <b>→</b></button></aside>
-      </div>
-    </section>
-
-    <section class="page" id="flights">
-      <div class="page-heading"><div><span class="eyebrow">FLIGHT REGISTRATION</span><h1>Đăng ký chuyến bay</h1><p>Chọn đơn vị, hành trình và cấu hình phương tiện bay.</p></div><span class="step-badge">BƯỚC 2 / 3</span></div>
-      <div class="flight-layout">
-        <form class="panel form-card" id="flightForm">
-          <div class="form-title"><span class="form-icon">↗</span><div><h2>Thông tin chuyến bay</h2><p>Lệnh bay có thể gửi ngay sau khi lưu.</p></div></div>
-          <div class="form-grid">
-            <label class="wide">Đơn vị khai thác *<select name="companyId" id="companySelect" required><option value="">Chọn hồ sơ đơn vị bay</option></select></label>
-            <label class="wide">Tên nhiệm vụ *<input name="missionName" required placeholder="Khảo sát tuyến điện khu vực phía Đông"></label>
-            <label>Điểm xuất phát *<input name="departureLocation" required placeholder="Khu Công nghệ cao, TP. Thủ Đức"></label>
-            <label>Điểm đến *<input name="destinationLocation" required placeholder="Phường Long Trường, TP. Thủ Đức"></label>
-            <fieldset class="wide drone-picker"><legend>Loại drone *</legend>
-              <label><input type="radio" name="droneType" value="MULTIROTOR" checked><span><i class="multi">✣</i><b>Đa cánh quạt</b><small>Linh hoạt, cất hạ cánh thẳng đứng</small></span></label>
-              <label><input type="radio" name="droneType" value="FIXED_WING"><span><i>➤</i><b>Cánh bằng</b><small>Tầm bay xa, hiệu suất cao</small></span></label>
-              <label><input type="radio" name="droneType" value="HYBRID"><span><i>✥</i><b>Hybrid</b><small>Kết hợp VTOL và cánh bằng</small></span></label>
-            </fieldset>
-            <label>Thời gian dự kiến *<input name="scheduledAt" id="scheduledAt" type="datetime-local" required></label>
-            <label>Độ cao tối đa (m) *<input name="altitude" type="number" min="20" max="120" value="90" required></label>
-            <label>Thời lượng dự kiến (phút) *<input name="estimatedDuration" type="number" min="5" max="240" value="35" required></label>
-          </div>
-          <div class="route-preview"><span class="route-dot start"></span><div><small>ĐIỂM ĐI</small><b id="routeStart">Chưa chọn</b></div><i></i><span class="route-plane">➤</span><i></i><span class="route-dot end"></span><div><small>ĐIỂM ĐẾN</small><b id="routeEnd">Chưa chọn</b></div></div>
-          <div class="form-actions"><span><i>✓</i> Kiểm tra dữ liệu tự động trước khi lưu</span><button class="primary" type="submit">Đăng ký chuyến bay <b>→</b></button></div>
-        </form>
-        <aside class="panel flight-list-panel"><div class="panel-heading"><div><span class="eyebrow">DANH SÁCH</span><h2>Chuyến bay đã tạo</h2></div><span class="count-pill" id="flightListCount">0</span></div><div id="flightList" class="flight-list"></div></aside>
-      </div>
-    </section>
-
-    <section class="page" id="monitor">
-      <div class="page-heading"><div><span class="eyebrow">SIMULATION CONTROL</span><h1>Mô phỏng & giám sát</h1><p>Gửi lệnh bay và quan sát dữ liệu telemetry trong thời gian thực.</p></div><span class="step-badge">BƯỚC 3 / 3</span></div>
-      <div class="monitor-toolbar panel"><div><label>Chọn chuyến bay<select id="monitorSelect"><option value="">Chưa có chuyến bay</option></select></label><div id="monitorMeta">Chọn một chuyến bay để bắt đầu</div></div><button class="primary" id="sendFlightButton" disabled>Gửi lệnh bay <span>↗</span></button></div>
-      <div class="telemetry-grid">
-        <article class="panel map-card"><div class="panel-heading"><div><span class="eyebrow">LIVE ROUTE</span><h2>Hành trình mô phỏng</h2></div><span class="live-badge"><i></i> LIVE</span></div><div class="sim-map"><div class="map-grid"></div><div class="map-road r1"></div><div class="map-road r2"></div><span class="map-label l1">KHU VỰC A</span><span class="map-label l2">KHU VỰC B</span><div class="flight-path"><i class="path-start"></i><span id="movingDrone">➤</span><i class="path-end"></i></div><div class="map-caption"><span><i class="blue-dot"></i>Điểm xuất phát</span><span><i class="coral-dot"></i>Điểm đến</span></div></div></article>
-        <div class="telemetry-side">
-          <div class="metric-grid">
-            <article class="panel metric"><span>↥</span><small>ĐỘ CAO</small><strong id="metricAltitude">0 <i>m</i></strong><div class="sparkline"><i></i><i></i><i></i><i></i><i></i></div></article>
-            <article class="panel metric"><span>⌁</span><small>TỐC ĐỘ</small><strong id="metricSpeed">0 <i>km/h</i></strong><div class="sparkline"><i></i><i></i><i></i><i></i><i></i></div></article>
-            <article class="panel metric"><span>▰</span><small>PIN</small><strong id="metricBattery">100 <i>%</i></strong><div class="meter"><i id="batteryMeter"></i></div></article>
-            <article class="panel metric"><span>⌁</span><small>TÍN HIỆU</small><strong id="metricSignal">100 <i>%</i></strong><div class="signal-bars"><i></i><i></i><i></i><i></i></div></article>
-          </div>
-          <article class="panel progress-card"><div><span class="eyebrow">TIẾN ĐỘ HÀNH TRÌNH</span><strong id="progressText">0%</strong></div><div class="progress-track"><i id="progressBar"></i></div><p id="monitorMessage">Đang chờ gửi lệnh bay đến hệ thống mô phỏng.</p></article>
-        </div>
-      </div>
-    </section>
-  </main>
+    <div class="auth-illustration" aria-hidden="true">
+      <div class="auth-orbit one"></div><div class="auth-orbit two"></div>
+      <div class="auth-drone"><span></span><i></i><b></b><em></em></div>
+      <span class="auth-cloud cloud-one"></span><span class="auth-cloud cloud-two"></span>
+      <div class="auth-route"><i></i><b></b></div>
+    </div>
+    <small class="auth-copyright">© 2026 SkyPermit · Hệ thống đăng ký hoạt động bay UAV</small>
   </div>
+  <div class="auth-panel"><div class="auth-card">
+    <div class="auth-tabs">
+      <button type="button" class="active" data-auth="login">Đăng nhập</button>
+      <button type="button" data-auth="register">Đăng ký</button>
+    </div>
+    <form class="auth-form active" id="loginForm">
+      <div class="auth-heading"><span>CHÀO MỪNG TRỞ LẠI</span><h2>Đăng nhập hệ thống</h2><p>Quản lý phương tiện và kế hoạch bay của bạn.</p></div>
+      <label>Tên đăng nhập<input name="username" autocomplete="username" required placeholder="vuong.operator"></label>
+      <label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required placeholder="Nhập mật khẩu"></label>
+      <button class="primary auth-submit">Đăng nhập →</button>
+    </form>
+    <form class="auth-form active" id="registerForm" hidden>
+      <div class="auth-heading"><span>KHỞI TẠO TÀI KHOẢN</span><h2>Đăng ký người vận hành</h2><p>Khai báo thông tin để bắt đầu đăng ký hoạt động bay.</p></div>
+      <fieldset class="account-type-picker">
+        <legend>Loại tài khoản</legend>
+        <label><input name="accountType" type="radio" value="INDIVIDUAL" checked><span><i>♙</i><b>Cá nhân</b><small>Người khai thác độc lập</small></span></label>
+        <label><input name="accountType" type="radio" value="BUSINESS"><span><i>▦</i><b>Doanh nghiệp</b><small>Tổ chức hoặc công ty</small></span></label>
+      </fieldset>
+      <label>Tên đăng nhập<input name="username" pattern="[a-zA-Z0-9_.-]{3,50}" minlength="3" maxlength="50" autocomplete="username" required placeholder="3–50 ký tự: chữ, số, dấu . _ -"></label>
+      <fieldset id="individualFields" class="registration-fields">
+        <label>Họ và tên<input name="fullName" maxlength="100" autocomplete="name" required></label>
+        <label>CCCD / Hộ chiếu (không bắt buộc)<input name="nationalId" maxlength="50"></label>
+      </fieldset>
+      <fieldset id="businessFields" class="registration-fields" disabled hidden>
+        <label>Tên doanh nghiệp<input name="companyName" maxlength="255" autocomplete="organization" required></label>
+        <div class="auth-fields">
+          <label>Mã số thuế<input name="taxCode" maxlength="50" required></label>
+          <label>Người đại diện<input name="representative" maxlength="100" required></label>
+        </div>
+        <label>Giấy phép khai thác (không bắt buộc)<input name="licenseNumber" maxlength="100"></label>
+      </fieldset>
+      <label id="addressLabel">Địa chỉ liên hệ<input name="address" maxlength="255" autocomplete="street-address"></label>
+      <div class="auth-fields">
+        <label>Email<input name="email" type="email" maxlength="100" autocomplete="email" required></label>
+        <label>Số điện thoại<input name="phone" type="tel" pattern="[0-9+ .-]{8,20}" autocomplete="tel" required></label>
+        <label>Mật khẩu<input name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required></label>
+        <label>Xác nhận mật khẩu<input name="confirmPassword" type="password" autocomplete="new-password" required></label>
+      </div>
+      <p class="muted">Tài khoản mới nhận vai trò người vận hành (OPERATOR).</p>
+      <button class="primary auth-submit">Tạo tài khoản →</button>
+    </form>
+  </div></div>
+</section>
 
-  <div class="toast" id="toast" role="status"><span>✓</span><div><b>Thành công</b><small>Thao tác đã hoàn tất.</small></div></div>
-  <script src="/app.js"></script>
+<div id="appShell" hidden>
+  <aside class="sidebar">
+    <a class="brand" href="#"><span class="brand-icon"><svg viewBox="0 0 40 40"><path d="M7 25c5-8 11-11 26-12-6 3-10 6-13 10l8 3-4 3-8-2-5 5-4-1 2-6H7Z"/></svg></span><span><strong>SkyPermit</strong><small>UTM REGISTRATION</small></span></a>
+    <nav id="nav">
+      <button class="nav-item active" data-tab="drones">◎ Phương tiện</button>
+      <button class="nav-item" data-tab="flights">↗ Kế hoạch bay</button>
+      <button class="nav-item" data-tab="users" data-staff hidden>♙ Người dùng</button>
+      <button class="nav-item" data-tab="roles" data-admin hidden>◇ Vai trò</button>
+      <button class="nav-item" data-tab="logs" data-staff hidden>≡ Nhật ký</button>
+      <button class="nav-item" data-tab="integrations" data-staff hidden>⇄ Tích hợp</button>
+    </nav>
+    <div class="portal-account"><b id="identity"></b><small id="roleName"></small><button id="logout">Đăng xuất</button></div>
+  </aside>
+  <main class="portal">
+    <div class="portal-heading">
+      <div><span class="eyebrow" id="portalLabel">CỔNG NGƯỜI VẬN HÀNH</span><h1 id="pageTitle">Phương tiện</h1><p class="muted" id="pageDescription">Khai báo hồ sơ UAV trước khi lập kế hoạch bay.</p></div>
+      <span class="portal-status" id="portalBadge">● Cổng đăng ký UTM</span>
+    </div>
+    <section id="dronesPanel">
+      <div class="portal-card" id="droneFormCard"><h2 id="droneFormTitle">Khai báo phương tiện</h2>
+        <form id="droneForm"><input name="id" type="hidden">
+          <div class="portal-grid">
+            <label>Số sê-ri UAV<input name="serialNumber" maxlength="100" required placeholder="Nhập số trên thiết bị / hồ sơ nhà sản xuất"><small>ID hệ thống được tạo tự động.</small></label>
+            <label>Loại UAV<select name="droneType" required><option value="">Chọn loại UAV</option><option value="MULTIROTOR">Multirotor · Đa cánh quạt</option><option value="FIXED_WING">Fixed-wing · Cánh bằng</option><option value="HYBRID">Hybrid VTOL · Lai VTOL</option></select></label>
+            <label>Model / tên mẫu UAV<input name="model" maxlength="100" required placeholder="Ví dụ: DJI Matrice 350 RTK"></label>
+            <label>Thời gian bay tối đa (phút)<input name="maxFlightTime" type="number" min="1" step="1" required placeholder="Ví dụ: 45"><small>Theo thông số kỹ thuật, nhập số phút nguyên lớn hơn 0.</small></label>
+            <label>Tốc độ tối đa (m/s)<input name="maxSpeed" type="number" min="0" step="any" required placeholder="Ví dụ: 15.5"><small>Theo thông số kỹ thuật, lớn hơn 0. Đổi km/h sang m/s: chia cho 3,6.</small></label>
+          </div>
+          <div class="preset-tools"><button type="button" id="dronePreset">Điền thông số mô phỏng theo loại UAV</button><small class="muted">Chỉ điền ô còn trống. Đây là tham số giả lập của đề tài.</small></div>
+          <div class="portal-actions"><button class="primary">Lưu phương tiện</button><button type="button" id="droneReset" data-reset="droneForm">Nhập mới</button></div>
+        </form>
+      </div>
+    </section>
+    <section id="flightsPanel" hidden>
+      <div class="portal-card" id="flightSubmitCard" data-operator><h2>Nộp kế hoạch bay</h2>
+        <form id="flightForm">
+          <label>Chọn UAV tham gia<select name="droneIds" id="droneSelect" multiple size="5" required aria-describedby="droneSelectionHelp"></select><small id="droneSelectionHelp">Giữ Ctrl/Command để chọn nhiều UAV, tối đa 50 UAV mỗi đợt gửi. Mỗi UAV có một kế hoạch được duyệt riêng trong cùng đợt gửi.</small></label>
+          <p class="selection-count" id="uavCount" aria-live="polite">Đã chọn 0 UAV</p>
+          <div class="portal-grid">
+            <label>Điểm đi<input name="departureName" maxlength="255" required placeholder="Ví dụ: Bãi đáp A, Đà Nẵng"></label>
+            <label>Điểm đến<input name="destinationName" maxlength="255" required placeholder="Ví dụ: Bãi đáp B, Đà Nẵng"></label>
+            <label>Cất cánh dự kiến (UTC+7)<input name="startTime" type="datetime-local" required></label>
+            <label>Hạ cánh dự kiến (UTC+7)<input name="endTime" type="datetime-local" required></label>
+          </div>
+          <div><h3>Lộ trình 4D</h3><p class="muted">Waypoint đầu là điểm đi, waypoint cuối là điểm đến; thời gian phải khớp giờ cất/hạ cánh. Độ cao 0–120 m so với mặt đất (AGL), theo cấu hình mô phỏng đề tài. Các UAV cùng đợt gửi dùng lộ trình này; việc kiểm tra xung đột giữa UAV sẽ do khối lập kế hoạch đảm nhiệm.</p><div id="waypoints"></div><button id="addWaypoint" type="button">+ Thêm waypoint</button></div>
+          <div class="portal-actions"><button class="primary">Nộp kế hoạch chờ duyệt</button></div>
+        </form>
+      </div>
+      <div class="portal-card" id="flightReviewCard" data-staff hidden>
+        <h2>Hàng chờ duyệt kế hoạch</h2>
+        <p class="muted">Kiểm tra người vận hành, UAV, thời gian và quỹ đạo 4D trong danh sách bên dưới trước khi duyệt hoặc từ chối. Mặc định chỉ hiển thị kế hoạch chờ duyệt. Chưa kiểm tra xung đột tự động.</p>
+        <p class="muted">ADMIN duyệt hoặc từ chối từng kế hoạch, có thể gửi ghi chú cho người vận hành. MANAGER theo dõi và cập nhật Đang bay / Hoàn thành. Kế hoạch được duyệt sẽ gửi đến hai đầu nhận mô phỏng và giám sát. Chế độ MOCK chỉ xác nhận nhận dữ liệu, không chạy chuyến bay hoặc kiểm tra xung đột.</p>
+      </div>
+    </section>
+    <section id="usersPanel" hidden>
+      <div class="portal-card" data-admin><h2>Thông tin người dùng</h2>
+        <form id="userForm"><input name="id" type="hidden">
+          <div class="portal-grid">
+            <label>Tên đăng nhập<input name="username" pattern="[a-zA-Z0-9_.-]{3,50}" required></label>
+            <label>Họ và tên<input name="fullName" maxlength="100" required></label>
+            <label>Email<input name="email" type="email" maxlength="100" required></label>
+            <label>Điện thoại<input name="phone" pattern="[0-9+ .-]{8,20}" required></label>
+            <label>Vai trò<select name="roleId" id="roleSelect" required></select></label>
+            <label>Mật khẩu (bỏ trống để giữ nguyên)<input name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password"></label>
+          </div>
+          <div class="portal-actions"><button class="primary">Lưu người dùng</button><button type="button" data-reset="userForm">Nhập mới</button></div>
+        </form>
+      </div>
+    </section>
+    <section id="rolesPanel" hidden>
+      <div class="portal-card"><h2>Thông tin vai trò</h2>
+        <form id="roleForm"><input name="id" type="hidden">
+          <div class="portal-grid">
+            <label>Mã vai trò<input name="code" pattern="[A-Z][A-Z0-9_]{0,49}" required placeholder="Ví dụ: AUDITOR"></label>
+            <label>Tên hiển thị<input name="name" maxlength="100" required></label>
+          </div>
+          <label>Mô tả<input name="description" maxlength="255"></label>
+          <div class="portal-actions"><button class="primary">Lưu vai trò</button><button type="button" data-reset="roleForm">Nhập mới</button></div>
+        </form>
+      </div>
+    </section>
+    <section id="logsPanel" hidden>
+      <div class="portal-card"><h2>Nhật ký hệ thống</h2><p class="muted">Tra cứu thao tác của người dùng và các thay đổi trong hệ thống.</p><button id="clearLogs" class="danger" data-admin>Xóa mềm nhật ký</button></div>
+    </section>
+    <section id="integrationsPanel" hidden>
+      <div class="portal-card"><h2>Chuyển kế hoạch sang mô phỏng và giám sát</h2><p class="muted">Theo dõi tối đa 100 bản tin mới nhất theo bộ lọc và phản hồi từ từng đầu nhận. Phản hồi MOCK chỉ chứng minh đã tiếp nhận dữ liệu trong hệ thống giả lập, chưa xác nhận UAV đã bay. ADMIN có thể gửi lại bản tin lỗi hoặc đang chờ.</p></div>
+    </section>
+    <div class="portal-card">
+      <div class="portal-list-heading"><h2 id="listTitle">Phương tiện đã đăng ký</h2><button id="refresh">Làm mới</button></div>
+      <div class="portal-toolbar">
+        <input id="keyword" placeholder="Tìm số sê-ri" aria-label="Từ khóa tìm kiếm">
+        <select id="activeFilter" aria-label="Trạng thái bản ghi"><option value="true">Đang hiệu lực</option><option value="false">Đã xóa mềm / ngừng hiệu lực</option></select>
+        <select id="lockedFilter" aria-label="Lọc khóa tài khoản" hidden><option value="">Tất cả tài khoản</option><option value="true">Đang khóa</option><option value="false">Không khóa</option></select>
+        <select id="flightFilter" aria-label="Lọc kế hoạch bay" hidden><option value="">Tất cả kế hoạch</option><option value="PENDING">Chờ duyệt</option><option value="APPROVED">Đã duyệt</option><option value="ACTIVE">Đang bay</option><option value="COMPLETED">Hoàn thành</option><option value="REJECTED">Bị từ chối</option><option value="CANCELLED">Đã hủy</option><option value="approved">Đã duyệt / Đang bay</option></select>
+        <select id="integrationFilter" aria-label="Lọc trạng thái chuyển dữ liệu" hidden><option value="">Tất cả bản tin</option><option value="PENDING">Đang chờ</option><option value="MOCK_DELIVERED">Mock đã nhận</option><option value="FAILED">Lỗi chuyển dữ liệu</option></select>
+        <select id="sortFilter" aria-label="Sắp xếp"><option value="created_at,desc">Mới tạo trước</option><option value="created_at,asc">Cũ tạo trước</option></select>
+        <select id="sizeFilter" aria-label="Số bản ghi mỗi trang"><option value="10">10 bản ghi</option><option value="25">25 bản ghi</option><option value="50">50 bản ghi</option><option value="100">100 bản ghi</option></select>
+        <button id="search">Tìm</button>
+      </div>
+      <div class="portal-table" id="list"></div>
+      <div class="portal-pager"><button id="previous">Trước</button><span id="pageInfo"></span><button id="next">Sau</button></div>
+    </div>
+  </main>
+</div>
+<dialog id="reviewDialog" class="portal-dialog" aria-labelledby="reviewTitle">
+  <form id="reviewForm"><h2 id="reviewTitle">Xét duyệt kế hoạch</h2><p id="reviewRoute"></p><label>Ghi chú gửi người vận hành<textarea name="reviewNote" rows="4" maxlength="1000" placeholder="Kết quả xem xét hoặc lý do từ chối"></textarea></label><p class="muted">Duyệt nội bộ phục vụ mô phỏng. Hệ thống chưa tự kiểm tra xung đột chiến lược.</p><div class="portal-actions"><button type="submit" class="primary">Xác nhận</button><button type="button" id="reviewClose">Quay lại</button></div></form>
+</dialog>
+<dialog id="deliveryDialog" class="portal-dialog wide-dialog" aria-labelledby="deliveryTitle"><h2 id="deliveryTitle">Trạng thái chuyển kế hoạch</h2><div id="deliveryContent"></div><div class="portal-actions"><button type="button" id="deliveryClose">Đóng</button></div></dialog>
 </body>
 </html>
