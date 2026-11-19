@@ -186,6 +186,31 @@ Khóa chính dùng UUID; thao tác xóa nghiệp vụ là xóa mềm.
 API nghiệp vụ yêu cầu cookie phiên đăng nhập và kiểm tra quyền trên server.
 Chi tiết payload, phân trang và luồng tích hợp nằm trong các tài liệu bên dưới.
 
+### Thử API bằng Swagger
+
+Sau khi khởi động ứng dụng, mở:
+
+- **Swagger UI:** http://localhost:8080/swagger-ui.html
+- **OpenAPI JSON:** http://localhost:8080/v3/api-docs
+
+Quy trình thử API:
+
+1. Mở nhóm **Xác thực**, chọn `POST /api/auth/login`, bấm **Try it out**.
+2. Nhập username và password của tài khoản đã có, bấm **Execute**. Có thể dùng
+   `POST /api/auth/register` để tạo tài khoản OPERATOR mới.
+3. Khi đăng nhập thành công, trình duyệt tự giữ cookie phiên `JSESSIONID` và gửi
+   trong các yêu cầu sau trên cùng địa chỉ. Không cần nhập token hoặc cookie vào
+   **Authorize**. Dùng cùng hostname, ví dụ `localhost`, cho cả đăng nhập và Swagger.
+4. Mở API cần thử, điền query/path/body rồi bấm **Execute**. Chọn các UUID có thật
+   của tài khoản đang đăng nhập; thời gian bay phải ở tương lai. `trajectoryJson`
+   là chuỗi chứa mảng JSON waypoint 4D, không phải mảng trực tiếp.
+5. Dùng tài khoản ADMIN để duyệt/từ chối; MANAGER chỉ điều hành kế hoạch đã duyệt.
+   `POST /api/auth/logout` kết thúc phiên hiện tại.
+
+Các thao tác POST/PUT/DELETE trong Swagger thay đổi dữ liệu của database đang
+cấu hình cho ứng dụng. Swagger dùng cùng quy tắc xác thực và phân quyền với website.
+Các tham số phân trang, bộ lọc và mô tả trường dữ liệu được hiển thị trong giao diện.
+
 ## 9. Tài liệu và trạng thái xác minh
 
 - [Phân quyền](docs/access-control.md).
@@ -205,7 +230,8 @@ Chạy toàn bộ kiểm thử tại thư mục gốc:
 
 Test dùng H2 riêng, bỏ qua `application-local.properties` và không kết nối SQL
 Server đang dùng. Không cần đổi cấu hình database hoặc truyền profile qua lệnh.
-Kết quả ngày 19/11/2026 sau khi cập nhật test và sửa cách nạp migration SQL Server:
-**25 test đạt, 0 thất bại, 0 lỗi, 0 bỏ qua**. Hai test hồi quy kiểm tra cách gửi
-script SQL Server thành một batch và cách tách câu lệnh H2 bằng JDBC giả lập.
+Kết quả ngày 19/11/2026 sau khi bổ sung Swagger:
+**28 test đạt, 0 thất bại, 0 lỗi, 0 bỏ qua**. Bộ test kiểm tra Swagger UI, tài liệu
+OpenAPI, xác thực phiên và các nghiệp vụ hiện có. Hai test hồi quy kiểm tra cách
+gửi script SQL Server thành một batch và cách tách câu lệnh H2 bằng JDBC giả lập.
 Kết quả này chưa xác minh migration hoặc khởi động trên SQL Server thật.

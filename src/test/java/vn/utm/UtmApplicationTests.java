@@ -39,6 +39,52 @@ class UtmApplicationTests {
 
     private record Account(String id, String username, MockHttpSession session) {}
 
+    @Test void swaggerUiAndClientConfigurationAreAvailableWithoutLogin() throws Exception {
+        mvc.perform(get("/swagger-ui.html")).andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/swagger-ui/index.html"));
+        mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Swagger UI")));
+        mvc.perform(get("/v3/api-docs/swagger-config")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.url").value("/v3/api-docs"))
+                .andExpect(jsonPath("$.withCredentials").value(true));
+    }
+
+    @Test void openApiDescribesSessionAuthenticationAndBusinessEndpoints() throws Exception {
+        MvcResult result = mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.info.title").value("SkyPermit UTM API"))
+                .andExpect(jsonPath("$.components.securitySchemes.sessionCookie.type").value("apiKey"))
+                .andExpect(jsonPath("$.components.securitySchemes.sessionCookie.in").value("cookie"))
+                .andExpect(jsonPath("$.components.securitySchemes.sessionCookie.name").value("JSESSIONID"))
+                .andReturn();
+        JsonNode document = mapper.readTree(result.getResponse().getContentAsString());
+        JsonNode paths = document.path("paths");
+        assertTrue(paths.has("/api/flights/batch"));
+        assertTrue(paths.has("/api/flights/{id}/accepted-plan"));
+        assertTrue(paths.has("/api/integrations/{id}/retry"));
+        assertFalse(paths.has("/error"));
+        assertEquals(0, paths.path("/api/auth/login").path("post").path("security").size());
+        assertTrue(paths.path("/api/auth/login").path("post").has("security"),
+                "Public login must explicitly override global session authentication");
+        assertTrue(paths.path("/api/auth/register").path("post").has("security"));
+        assertEquals(0, paths.path("/api/auth/register").path("post").path("security").size());
+        assertTrue(document.path("security").get(0).has("sessionCookie"));
+        Set<String> queryNames = new HashSet<>();
+        paths.path("/api/flights").path("get").path("parameters")
+                .forEach(parameter -> queryNames.add(parameter.path("name").asText()));
+        assertEquals(Set.of("page", "size", "sort", "isActive", "status"), queryNames,
+                "Swagger must expose usable filters instead of a raw Map or HttpSession");
+        assertTrue(document.path("components").path("schemas").path("LoginRequest")
+                .path("properties").path("password").path("writeOnly").asBoolean());
+    }
+
+    @Test void swaggerDocumentationDoesNotBypassSessionAuthentication() throws Exception {
+        mvc.perform(get("/v3/api-docs")).andExpect(status().isOk());
+        mvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
+        Account account = register();
+        mvc.perform(get("/api/auth/me").session(account.session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value(account.username));
+    }
+
     private Account register() throws Exception {
         String name = "operator" + UUID.randomUUID().toString().substring(0, 8);
         MvcResult result = mvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
