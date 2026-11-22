@@ -24,13 +24,16 @@ public class FlightIntegrationService {
     private final AuthService auth;
     private final ObjectMapper mapper;
     private final String mode;
+    private final MonitoringHttpClient monitoring;
 
     public FlightIntegrationService(IntegrationDeliveryRepository deliveries, FlightPlanRepository flights, SystemLogRepository logs,
-            AuthService auth, ObjectMapper mapper, @Value("${utm.integration.mode:mock}") String mode) {
+            AuthService auth, ObjectMapper mapper, @Value("${utm.integration.mode:mock}") String mode,
+            MonitoringHttpClient monitoring) {
         this.deliveries = deliveries; this.flights = flights; this.logs = logs; this.auth = auth; this.mapper = mapper;
         this.mode = mode.trim().toLowerCase(Locale.ROOT);
-        if (!Set.of("mock", "disabled").contains(this.mode))
-            throw new IllegalArgumentException("utm.integration.mode chỉ hỗ trợ mock hoặc disabled");
+        this.monitoring = monitoring;
+        if (!Set.of("mock", "disabled", "http").contains(this.mode))
+            throw new IllegalArgumentException("utm.integration.mode chỉ hỗ trợ mock, disabled hoặc http");
     }
 
     /** Called in the same transaction as the plan transition; no external side effects. */
@@ -108,11 +111,16 @@ public class FlightIntegrationService {
         if (delivery.getEventType().equals("flightplan.accepted")) requireAccepted(flight);
         else if (flight.getStatus() != delivery.getFlightStatus())
             throw new IllegalArgumentException("Bản tin đã cũ so với trạng thái kế hoạch hiện tại");
-        if (delivery.getStatus() == DeliveryStatus.MOCK_DELIVERED) return delivery;
-        if (delivery.getEventType().equals("flightplan.accepted") && !flight.getStartTime().isAfter(Instant.now()))
+        boolean liveMonitoring = mode.equals("http") && delivery.getTarget() == IntegrationTarget.MONITORING;
+        if (delivery.getStatus() == DeliveryStatus.DELIVERED
+                || (delivery.getStatus() == DeliveryStatus.MOCK_DELIVERED && !liveMonitoring)) return delivery;
+        if (liveMonitoring && flight.getStatus() != delivery.getFlightStatus())
+            throw new IllegalArgumentException("Bản tin đã cũ so với trạng thái kế hoạch hiện tại");
+        if (!liveMonitoring && delivery.getEventType().equals("flightplan.accepted") && !flight.getStartTime().isAfter(Instant.now()))
             throw new IllegalArgumentException("Kế hoạch đã qua giờ cất cánh; không gửi lại bản tin chấp thuận cũ");
         delivery.recordActor(actor.getId());
-        dispatch(delivery);
+        if (liveMonitoring) sendMonitoring(delivery);
+        else dispatch(delivery);
         SystemLog log = new SystemLog();
         log.setUser(actor); log.setActionType("INTEGRATION_RETRY");
         log.setDetails(id + ":" + delivery.getTarget() + ":" + delivery.getStatus());
@@ -123,6 +131,40 @@ public class FlightIntegrationService {
     private void requireAccepted(FlightPlan flight) {
         if (!flight.isActive() || flight.getDeletedAt() != null || !ACCEPTED.contains(flight.getStatus()))
             throw new IllegalArgumentException("Chỉ xuất hoặc gửi lại kế hoạch còn hiệu lực đã được duyệt");
+    }
+
+    /** Separate transaction invoked by the worker after the approval has committed. */
+    public void deliverMonitoring(UUID id) {
+        if (!mode.equals("http")) return;
+        UUID flightId = deliveries.findFlightIdById(id).orElseThrow();
+        FlightPlan flight = flights.findForUpdate(flightId).orElseThrow();
+        IntegrationDelivery delivery = deliveries.findLockedById(id).orElseThrow();
+        if (delivery.getTarget() != IntegrationTarget.MONITORING
+                || !Set.of(DeliveryStatus.PENDING, DeliveryStatus.FAILED).contains(delivery.getStatus())
+                || delivery.getAttempts() >= MonitoringDeliveryWorker.MAX_ATTEMPTS) return;
+        if (!flight.isActive() || flight.getDeletedAt() != null || flight.getStatus() != delivery.getFlightStatus()) {
+            delivery.setStatus(DeliveryStatus.SUPERSEDED);
+            delivery.setLastError("Bản tin đã được thay thế bởi trạng thái kế hoạch mới hơn");
+            return;
+        }
+        sendMonitoring(delivery);
+    }
+
+    private void sendMonitoring(IntegrationDelivery delivery) {
+        delivery.setAttempts(delivery.getAttempts() + 1);
+        delivery.setLastAttemptAt(Instant.now());
+        try {
+            delivery.setReceipt(monitoring.send(delivery));
+            delivery.setStatus(DeliveryStatus.DELIVERED);
+            delivery.setDeliveredAt(Instant.now()); delivery.setLastError(null);
+        } catch (java.io.IOException | InterruptedException | IllegalArgumentException exception) {
+            if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
+            delivery.setStatus(DeliveryStatus.FAILED); delivery.setDeliveredAt(null); delivery.setReceipt(null);
+            // Never store URLs, authorization headers or receiver response bodies in the portal.
+            delivery.setLastError(exception instanceof java.io.IOException
+                    && exception.getMessage() != null && exception.getMessage().startsWith("Máy chủ giám sát trả HTTP ")
+                    ? exception.getMessage() : "Không nhận được ACK từ máy chủ giám sát; có thể gửi lại cùng eventId");
+        }
     }
 
     private Map<String, Object> envelope(FlightPlan flight, String eventType, UUID eventId, Instant occurredAt) {
@@ -150,7 +192,7 @@ public class FlightIntegrationService {
     }
 
     private void dispatch(IntegrationDelivery delivery) {
-        if (mode.equals("disabled")) {
+        if (mode.equals("disabled") || mode.equals("http")) {
             delivery.setStatus(DeliveryStatus.PENDING);
             delivery.setLastError(null);
             return;

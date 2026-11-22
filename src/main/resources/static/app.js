@@ -18,7 +18,7 @@ const descriptions = {
 };
 const labels = {PENDING: 'Chờ duyệt', APPROVED: 'Đã duyệt', REJECTED: 'Từ chối', ACTIVE: 'Đang bay', COMPLETED: 'Hoàn thành', CANCELLED: 'Đã hủy'};
 const droneTypes = {MULTIROTOR: 'Multirotor · Đa cánh quạt', FIXED_WING: 'Fixed-wing · Cánh bằng', HYBRID: 'Hybrid VTOL · Lai VTOL'};
-const deliveryLabels = {PENDING: 'Đang chờ', MOCK_DELIVERED: 'Mock đã nhận', FAILED: 'Lỗi chuyển dữ liệu'};
+const deliveryLabels = {PENDING: 'Đang chờ', MOCK_DELIVERED: 'Mock đã nhận', DELIVERED: 'Giám sát đã nhận', SUPERSEDED: 'Đã có bản tin mới hơn', FAILED: 'Lỗi chuyển dữ liệu'};
 const targetLabels = {SIMULATION: 'Mô phỏng', MONITORING: 'Giám sát'};
 
 async function api(path, method = 'GET', body) {
@@ -185,7 +185,7 @@ function renderRow(row) {
     return `<td>${escape(row.code)}${detail}</td><td>${escape(row.name)}<small>${escape(row.description)}</small></td><td>${row.isSystem ? 'Vai trò hệ thống' : 'Vai trò tùy chỉnh'}</td><td>${actions}</td>`;
   }
   if (state.tab === 'integrations') {
-    return `<td>${escape(formatTime(row.createdAt))}<small>${escape(row.id)}</small></td><td>${escape(targetLabels[row.target] || row.target)}<small>${escape(row.eventType)}</small><small>Kế hoạch ${escape(row.flightId)}</small></td><td><span class="badge ${escape(row.status)}">${escape(deliveryLabels[row.status] || row.status)}</span><small>${escape(row.attempts)} lần gửi</small>${row.lastError ? `<small>${escape(row.lastError)}</small>` : ''}</td><td>${actionButton('delivery-details', id, 'Xem bản tin')}${admin() && row.status !== 'MOCK_DELIVERED' ? actionButton('retry', id, 'Gửi lại') : ''}</td>`;
+    return `<td>${escape(formatTime(row.createdAt))}<small>${escape(row.id)}</small></td><td>${escape(targetLabels[row.target] || row.target)}<small>${escape(row.eventType)}</small><small>Kế hoạch ${escape(row.flightId)}</small></td><td><span class="badge ${escape(row.status)}">${escape(deliveryLabels[row.status] || row.status)}</span><small>${escape(row.attempts)} lần gửi</small>${row.lastError ? `<small>${escape(row.lastError)}</small>` : ''}</td><td>${actionButton('delivery-details', id, 'Xem bản tin')}${admin() && !['DELIVERED', 'SUPERSEDED'].includes(row.status) && (row.status !== 'MOCK_DELIVERED' || row.target === 'MONITORING') ? actionButton('retry', id, 'Gửi lại') : ''}</td>`;
   }
   return `<td>${escape(formatTime(row.createdAt))}</td><td>${escape(row.user?.username || 'Hệ thống')}</td><td>${escape(row.actionType)}</td><td>${escape(row.details)}</td>`;
 }

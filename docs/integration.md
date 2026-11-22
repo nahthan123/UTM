@@ -1,4 +1,34 @@
-# SkyPermit UTM và chuẩn bị tích hợp mô phỏng
+# SkyPermit UTM và tích hợp giám sát
+
+## Kết nối thật với UTM Đà Nẵng 3D
+
+Bật `utm.integration.mode=http` trong `application-local.properties`; đặt
+`utm.integration.monitoring-url=http://127.0.0.1:8000/api/integration/flight-plans`
+và `utm.integration.monitoring-token` bằng cùng `UTM_MONITORING_TOKEN` trên backend
+3D (ít nhất 16 ký tự). Có thể dùng biến môi trường `UTM_INTEGRATION_MODE`,
+`UTM_MONITORING_URL`, `UTM_MONITORING_TOKEN`. Không đưa khóa vào Git/trình duyệt.
+
+Sau khi transaction duyệt/cập nhật/hủy đã commit, worker gửi các bản tin MONITORING
+qua HTTP mỗi 3 giây (tối đa 20 bản tin/đợt, 5 lần thử). Header xác thực là
+`X-UTM-Integration-Key`. Chỉ ghi `DELIVERED` khi nhận 2xx cùng JSON
+`{"status":"ACCEPTED","eventId":"<đúng eventId đã gửi>"}`. Lỗi ghi `FAILED`, không
+rollback kết quả duyệt. ADMIN có thể gửi lại cùng eventId; backend 3D chống lặp.
+Bản tin đã cũ so với trạng thái chuyến bị đánh dấu `SUPERSEDED`. Mọi event đều có
+đầy đủ snapshot, nên backend 3D có thể nhận ACTIVE/COMPLETED/CANCELLED mà chưa
+nhận bản APPROVED. Không gửi lại bản chấp thuận cũ khi chuyến đã đổi trạng thái.
+
+Chế độ http chỉ gửi MONITORING; SIMULATION giữ PENDING. Bản ghi mock cũ không
+tự chuyển sang gửi thật; có thể retry bản MONITORING còn phù hợp trạng thái.
+`mock` vẫn là mặc định và `disabled` giữ nguyên hành vi trước đây.
+
+Backend 3D lưu kế hoạch trong SQLite và gửi snapshot/cập nhật qua
+`ws://localhost:8000/ws/flight-plans`. Mở giao diện 3D ở chế độ LIVE để nhận kế
+hoạch; vị trí UAV vẫn nhận từ WebSocket telemetry riêng. Các bản tin telemetry
+phải có `uav_id=droneId`, `flight_plan_id=flightId` để so sánh với lộ trình Ops.
+Không tạo vị trí quan sát từ kế hoạch đã duyệt.
+
+Hướng dẫn đầy đủ ở dự án 3D: `UTM_OPS_INTEGRATION.md`.
+Phần dưới ghi lại nền tảng mock và hợp đồng dữ liệu trước khi bổ sung HTTP.
 
 ## Luồng đã triển khai ngày 19 tháng 11 năm 2026
 

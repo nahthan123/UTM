@@ -13,6 +13,8 @@ public interface IntegrationDeliveryRepository extends JpaRepository<Integration
     List<IntegrationDelivery> findTop100ByOrderByCreatedAtDesc();
     List<IntegrationDelivery> findTop100ByStatusOrderByCreatedAtDesc(DeliveryStatus status);
     List<IntegrationDelivery> findTop100ByFlightIdOrderByCreatedAtDesc(UUID flightId);
+    List<IntegrationDelivery> findTop20ByTargetAndStatusInAndAttemptsLessThanOrderByCreatedAtAsc(
+            IntegrationTarget target, Collection<DeliveryStatus> statuses, int attempts);
 
     @Query("select delivery.flight.id from IntegrationDelivery delivery where delivery.id = :id")
     Optional<UUID> findFlightIdById(@Param("id") UUID id);
