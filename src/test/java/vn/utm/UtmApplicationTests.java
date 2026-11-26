@@ -509,4 +509,97 @@ class UtmApplicationTests {
                 .andExpect(jsonPath("$.accountType").value("INDIVIDUAL"))
                 .andExpect(jsonPath("$.companyName").isEmpty()).andExpect(jsonPath("$.taxCode").isEmpty());
     }
+
+    @Test void geozonesOperatorLifecycleAdminRevokeAndScopedMonitoringFeedWork() throws Exception {
+        Account operator = register();
+        Account other = register();
+        MockHttpSession manager = staff("MANAGER");
+        MockHttpSession admin = staff("ADMIN");
+
+        // 1. Geozones: MANAGER CRUD; ADMIN & OPERATOR R only (403 on POST)
+        Map<String, Object> zoneReq = new HashMap<>(Map.of(
+                "code", "UVR-TEST-" + UUID.randomUUID().toString().substring(0, 6),
+                "name", "Vùng cấm bay khẩn cấp VIP",
+                "zoneType", "TFR_UVR",
+                "category", "DYNAMIC",
+                "centerLat", 16.0612,
+                "centerLng", 108.2245,
+                "radiusMeters", 500.0));
+        zoneReq.put("minAltitudeM", 0.0);
+        zoneReq.put("maxAltitudeM", 120.0);
+
+        mvc.perform(post("/api/geozones").session(admin).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(zoneReq))).andExpect(status().isForbidden());
+        mvc.perform(post("/api/geozones").session(operator.session).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(zoneReq))).andExpect(status().isForbidden());
+
+        MvcResult createdZone = mvc.perform(post("/api/geozones").session(manager).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(zoneReq))).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.zoneType").value("TFR_UVR")).andReturn();
+        String zoneId = mapper.readTree(createdZone.getResponse().getContentAsString()).get("id").asText();
+
+        mvc.perform(get("/api/geozones").session(operator.session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
+        mvc.perform(get("/api/geozones").session(admin)).andExpect(status().isOk());
+
+        zoneReq.put("name", "Vùng TFR cập nhật");
+        mvc.perform(put("/api/geozones/{id}", zoneId).session(manager).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(zoneReq))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Vùng TFR cập nhật"));
+        mvc.perform(delete("/api/geozones/{id}", zoneId).session(manager)).andExpect(status().isNoContent());
+        mvc.perform(put("/api/geozones/{id}/restore", zoneId).session(manager)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.isActive").value(true));
+
+        // 2. OPERATOR can activate (APPROVED -> ACTIVE) and complete (ACTIVE -> COMPLETED) own flight
+        String droneId = createDrone(operator);
+        String flightId = submit(operator, plan(droneId));
+        String serial = drones.findById(UUID.fromString(droneId)).orElseThrow().getSerialNumber();
+
+        mvc.perform(put("/api/flights/{id}/status", flightId).session(admin).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"APPROVED\"}")).andExpect(status().isOk());
+        mvc.perform(put("/api/flights/{id}/status", flightId).session(other.session).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"ACTIVE\"}")).andExpect(status().isForbidden());
+        mvc.perform(put("/api/flights/{id}/status", flightId).session(operator.session).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"ACTIVE\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"));
+        mvc.perform(put("/api/flights/{id}/status", flightId).session(operator.session).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"COMPLETED\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        // 3. ADMIN can revoke an APPROVED flight (e.g., emergency UVR)
+        String flight2Id = submit(operator, plan(createDrone(operator)));
+        mvc.perform(put("/api/flights/{id}/status", flight2Id).session(admin).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"APPROVED\"}")).andExpect(status().isOk());
+        mvc.perform(put("/api/flights/{id}/revoke", flight2Id).session(operator.session)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/flights/{id}/revoke", flight2Id).session(manager)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/flights/{id}/revoke", flight2Id).session(admin).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reviewNote\":\"Có vùng UVR khẩn cấp\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        // 4. Scoped monitoring feed + /api/logs/my + /api/flights/export.csv
+        mvc.perform(post("/api/integration/monitoring-updates").contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of(
+                        "flightId", flightId, "droneId", serial, "callsign", serial,
+                        "currentPosition", Map.of("latitude", 16.06, "longitude", 108.22, "altitudeM", 80))))).andExpect(status().isOk());
+        mvc.perform(post("/api/integration/monitoring-updates").contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of(
+                        "flightId", "FOREIGN-FLIGHT", "droneId", "FOREIGN-UAV", "callsign", "FOREIGN-UAV",
+                        "currentPosition", Map.of("latitude", 16.07, "longitude", 108.23, "altitudeM", 90))))).andExpect(status().isOk());
+
+        mvc.perform(get("/api/integration/monitoring-feed").session(operator.session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.scope").value("OWN_ONLY"))
+                .andExpect(jsonPath("$.activeUavs[*].droneId", org.hamcrest.Matchers.hasItem(serial)))
+                .andExpect(jsonPath("$.activeUavs[*].droneId", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("FOREIGN-UAV"))));
+        mvc.perform(get("/api/integration/monitoring-feed").session(other.session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.scope").value("OWN_ONLY"))
+                .andExpect(jsonPath("$.activeUavs").isEmpty());
+        mvc.perform(get("/api/integration/monitoring-feed").session(manager)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.scope").value("ALL_SYSTEM"))
+                .andExpect(jsonPath("$.activeUavs[*].droneId", org.hamcrest.Matchers.hasItem("FOREIGN-UAV")));
+
+        mvc.perform(get("/api/logs/my").session(operator.session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+        mvc.perform(get("/api/flights/export.csv").session(operator.session)).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(serial)));
+        mvc.perform(get("/api/flights/export.csv").session(manager)).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("flight_id,serial_number")));
+    }
 }

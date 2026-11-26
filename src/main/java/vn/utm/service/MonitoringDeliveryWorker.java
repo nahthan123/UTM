@@ -23,9 +23,11 @@ public class MonitoringDeliveryWorker {
 
     @Scheduled(initialDelayString = "${utm.integration.poll-ms:3000}", fixedDelayString = "${utm.integration.poll-ms:3000}")
     public void deliver() {
-        for (var delivery : deliveries.findTop20ByTargetAndStatusInAndAttemptsLessThanOrderByCreatedAtAsc(
-                IntegrationTarget.MONITORING, List.of(DeliveryStatus.PENDING, DeliveryStatus.FAILED), MAX_ATTEMPTS)) {
-            integration.deliverMonitoring(delivery.getId());
+        for (IntegrationTarget target : List.of(IntegrationTarget.MONITORING, IntegrationTarget.SIMULATION)) {
+            for (var delivery : deliveries.findTop20ByTargetAndStatusInAndAttemptsLessThanOrderByCreatedAtAsc(
+                    target, List.of(DeliveryStatus.PENDING, DeliveryStatus.FAILED), MAX_ATTEMPTS)) {
+                integration.deliverMonitoring(delivery.getId());
+            }
         }
     }
 }

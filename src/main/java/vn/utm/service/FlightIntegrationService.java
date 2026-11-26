@@ -111,15 +111,15 @@ public class FlightIntegrationService {
         if (delivery.getEventType().equals("flightplan.accepted")) requireAccepted(flight);
         else if (flight.getStatus() != delivery.getFlightStatus())
             throw new IllegalArgumentException("Bản tin đã cũ so với trạng thái kế hoạch hiện tại");
-        boolean liveMonitoring = mode.equals("http") && delivery.getTarget() == IntegrationTarget.MONITORING;
+        boolean liveHttp = mode.equals("http") && isHttpTargetSupported(delivery.getTarget());
         if (delivery.getStatus() == DeliveryStatus.DELIVERED
-                || (delivery.getStatus() == DeliveryStatus.MOCK_DELIVERED && !liveMonitoring)) return delivery;
-        if (liveMonitoring && flight.getStatus() != delivery.getFlightStatus())
+                || (delivery.getStatus() == DeliveryStatus.MOCK_DELIVERED && !liveHttp)) return delivery;
+        if (liveHttp && flight.getStatus() != delivery.getFlightStatus())
             throw new IllegalArgumentException("Bản tin đã cũ so với trạng thái kế hoạch hiện tại");
-        if (!liveMonitoring && delivery.getEventType().equals("flightplan.accepted") && !flight.getStartTime().isAfter(Instant.now()))
+        if (!liveHttp && delivery.getEventType().equals("flightplan.accepted") && !flight.getStartTime().isAfter(Instant.now()))
             throw new IllegalArgumentException("Kế hoạch đã qua giờ cất cánh; không gửi lại bản tin chấp thuận cũ");
         delivery.recordActor(actor.getId());
-        if (liveMonitoring) sendMonitoring(delivery);
+        if (liveHttp) sendMonitoring(delivery);
         else dispatch(delivery);
         SystemLog log = new SystemLog();
         log.setUser(actor); log.setActionType("INTEGRATION_RETRY");
@@ -133,13 +133,18 @@ public class FlightIntegrationService {
             throw new IllegalArgumentException("Chỉ xuất hoặc gửi lại kế hoạch còn hiệu lực đã được duyệt");
     }
 
+    private boolean isHttpTargetSupported(IntegrationTarget target) {
+        return target == IntegrationTarget.MONITORING
+                || (target == IntegrationTarget.SIMULATION && monitoring.supportsTarget(target));
+    }
+
     /** Separate transaction invoked by the worker after the approval has committed. */
     public void deliverMonitoring(UUID id) {
         if (!mode.equals("http")) return;
         UUID flightId = deliveries.findFlightIdById(id).orElseThrow();
         FlightPlan flight = flights.findForUpdate(flightId).orElseThrow();
         IntegrationDelivery delivery = deliveries.findLockedById(id).orElseThrow();
-        if (delivery.getTarget() != IntegrationTarget.MONITORING
+        if (!isHttpTargetSupported(delivery.getTarget())
                 || !Set.of(DeliveryStatus.PENDING, DeliveryStatus.FAILED).contains(delivery.getStatus())
                 || delivery.getAttempts() >= MonitoringDeliveryWorker.MAX_ATTEMPTS) return;
         if (!flight.isActive() || flight.getDeletedAt() != null || flight.getStatus() != delivery.getFlightStatus()) {
@@ -161,9 +166,11 @@ public class FlightIntegrationService {
             if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
             delivery.setStatus(DeliveryStatus.FAILED); delivery.setDeliveredAt(null); delivery.setReceipt(null);
             // Never store URLs, authorization headers or receiver response bodies in the portal.
-            delivery.setLastError(exception instanceof java.io.IOException
-                    && exception.getMessage() != null && exception.getMessage().startsWith("Máy chủ giám sát trả HTTP ")
-                    ? exception.getMessage() : "Không nhận được ACK từ máy chủ giám sát; có thể gửi lại cùng eventId");
+            String msg = exception.getMessage();
+            boolean isHttpError = exception instanceof java.io.IOException && msg != null
+                    && (msg.startsWith("Máy chủ giám sát trả HTTP ") || msg.startsWith("Máy chủ SIMULATION trả HTTP "));
+            delivery.setLastError(isHttpError
+                    ? msg : "Không nhận được ACK từ máy chủ đầu nhận; có thể gửi lại cùng eventId");
         }
     }
 

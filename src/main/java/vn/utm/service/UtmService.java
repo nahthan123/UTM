@@ -254,8 +254,13 @@ public class UtmService {
     }
 
     public FlightPlan status(UUID id, FlightStatus next, String reviewNote, UserAccount actor) {
-        auth.requireStaff(actor);
-        if (next == FlightStatus.APPROVED || next == FlightStatus.REJECTED) auth.requireAdmin(actor);
+        if (next == FlightStatus.APPROVED || next == FlightStatus.REJECTED) {
+            auth.requireAdmin(actor);
+        } else if (next == FlightStatus.ACTIVE || next == FlightStatus.COMPLETED) {
+            if (!auth.isStaff(actor) && !actor.getRole().getCode().equals("OPERATOR")) auth.deny();
+        } else {
+            auth.requireStaff(actor);
+        }
         FlightPlan flight = editableFlight(id, actor);
         boolean valid = switch (flight.getStatus()) {
             case PENDING -> next == FlightStatus.APPROVED || next == FlightStatus.REJECTED;
@@ -277,6 +282,22 @@ public class UtmService {
         flight.setStatus(next); flight.recordActor(actor.getId()); log(actor, "FLIGHT_STATUS", id + ":" + next);
         if (next == FlightStatus.APPROVED) integration.publish(flight, "flightplan.accepted");
         else if (next == FlightStatus.ACTIVE || next == FlightStatus.COMPLETED) integration.publish(flight, "flightplan.status.changed");
+        return flight;
+    }
+
+    public FlightPlan revoke(UUID id, String reviewNote, UserAccount actor) {
+        auth.requireAdmin(actor);
+        FlightPlan flight = editableFlight(id, actor);
+        if (!Set.of(FlightStatus.APPROVED, FlightStatus.ACTIVE).contains(flight.getStatus()))
+            throw new IllegalArgumentException("Chỉ thu hồi phép bay đang ở trạng thái Đã duyệt hoặc Đang bay");
+        String note = trimToNull(reviewNote);
+        flight.setStatus(FlightStatus.CANCELLED);
+        flight.setReviewedAt(Instant.now());
+        flight.setReviewedBy(actor.getId());
+        flight.setReviewNote(note != null ? "[Thu hồi phép bay] " + note : "[Thu hồi phép bay] ADMIN thu hồi phép bay khẩn cấp");
+        flight.recordActor(actor.getId());
+        log(actor, "FLIGHT_REVOKE", id.toString());
+        integration.publish(flight, "flightplan.cancelled");
         return flight;
     }
 

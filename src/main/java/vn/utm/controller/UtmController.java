@@ -7,7 +7,7 @@ import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import vn.utm.dto.request.*;
 import vn.utm.dto.response.*;
@@ -195,6 +195,22 @@ public class UtmController {
         return queries.logs(params, null, type, auth.requireAccount(session)).map(SystemLogResponse::from);
     }
 
+    @GetMapping("/logs/my")
+    @Operation(tags = {"Nhật ký"}, summary = "Xem nhật ký của tôi", description = "Mọi tài khoản đều xem được lịch sử thao tác và chuyến bay của chính mình.")
+    public PageResponse<SystemLogResponse> myLogs(@Parameter(hidden = true) @RequestParam Map<String, String> params, @Parameter(hidden = true) HttpSession session) {
+        return queries.myLogs(params, auth.requireAccount(session)).map(SystemLogResponse::from);
+    }
+
+    @GetMapping(value = "/flights/export.csv", produces = "text/csv; charset=utf-8")
+    @Operation(tags = {"Kế hoạch bay"}, summary = "Xuất báo cáo lịch sử bay CSV", description = "ADMIN/MANAGER xuất toàn hệ thống; OPERATOR chỉ xuất các chuyến bay của mình.")
+    public ResponseEntity<String> exportFlightsCsv(@Parameter(hidden = true) HttpSession session) {
+        String csv = queries.exportFlightsCsv(auth.requireAccount(session));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"utm-flight-history.csv\"")
+                .contentType(MediaType.parseMediaType("text/csv; charset=utf-8"))
+                .body(csv);
+    }
+
     @PostMapping("/users")
     @Operation(tags = {"Người dùng"}, summary = "Tạo người dùng", description = "Chỉ ADMIN. Gán roleId từ danh mục vai trò; tài khoản mới cần mật khẩu.")
     @ResponseStatus(HttpStatus.CREATED)
@@ -266,9 +282,18 @@ public class UtmController {
     }
 
     @PutMapping("/flights/{id}/status")
-    @Operation(tags = {"Kế hoạch bay"}, summary = "Xét duyệt hoặc cập nhật trạng thái", description = "Chỉ ADMIN duyệt/từ chối PENDING. ADMIN/MANAGER cập nhật APPROVED → ACTIVE → COMPLETED. Ghi chú xét duyệt được gửi lại người vận hành; khi duyệt tạo bản tin bàn giao.")
+    @Operation(tags = {"Kế hoạch bay"}, summary = "Xét duyệt hoặc cập nhật trạng thái", description = "Chỉ ADMIN duyệt/từ chối PENDING. OPERATOR chủ sở hữu (hoặc ADMIN/MANAGER) cập nhật APPROVED → ACTIVE → COMPLETED. Ghi chú xét duyệt được gửi lại người vận hành; khi duyệt tạo bản tin bàn giao.")
     public FlightPlanResponse flightStatus(@PathVariable UUID id, @Valid @RequestBody StatusRequest request, @Parameter(hidden = true) HttpSession session) {
         return FlightPlanResponse.from(service.status(id, request.status(), request.reviewNote(), auth.requireAccount(session)));
+    }
+
+    @PutMapping("/flights/{id}/revoke")
+    @Operation(tags = {"Kế hoạch bay"}, summary = "Thu hồi phép bay đã duyệt", description = "Chỉ ADMIN. Thu hồi kế hoạch APPROVED/ACTIVE (ví dụ khi có UVR khẩn cấp) và phát bản tin hủy sang mô phỏng/giám sát.")
+    public FlightPlanResponse revoke(@PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> body,
+            @Parameter(hidden = true) HttpSession session) {
+        String note = body == null ? null : body.get("reviewNote");
+        return FlightPlanResponse.from(service.revoke(id, note, auth.requireAccount(session)));
     }
 
     @PostMapping("/flights/batch")

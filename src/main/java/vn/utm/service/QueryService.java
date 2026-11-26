@@ -112,4 +112,46 @@ public class QueryService {
         if (actionType != null) spec = spec.and((root, query, cb) -> cb.equal(root.get("actionType"), actionType));
         return PageResponse.from(logs.findAll(spec, pageable(params, Set.of("createdAt", "updatedAt", "actionType"))));
     }
+
+    public PageResponse<SystemLog> myLogs(Map<String, String> params, UserAccount actor) {
+        Specification<SystemLog> spec = active(params);
+        spec = spec.and((root, query, cb) -> cb.equal(root.get("user").get("id"), actor.getId()));
+        String actionType = params.get("type");
+        if (actionType != null && !actionType.isBlank()) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("actionType"), actionType.trim()));
+        }
+        return PageResponse.from(logs.findAll(spec, pageable(params, Set.of("createdAt", "updatedAt", "actionType"))));
+    }
+
+    public String exportFlightsCsv(UserAccount actor) {
+        Specification<FlightPlan> spec = (root, query, cb) -> cb.and(cb.isTrue(root.get("active")), cb.isNull(root.get("deletedAt")));
+        if (!auth.isStaff(actor)) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("operator").get("id"), actor.getId()));
+        }
+        List<FlightPlan> rows = flights.findAll(spec, Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by("id")));
+        StringBuilder sb = new StringBuilder("\uFEFF");
+        sb.append("flight_id,serial_number,operator,departure,destination,start_time_utc,end_time_utc,altitude_ref,status,review_note\n");
+        for (FlightPlan f : rows) {
+            sb.append(csvCell(f.getId())).append(',')
+              .append(csvCell(f.getDrone().getSerialNumber())).append(',')
+              .append(csvCell(f.getOperator().displayName())).append(',')
+              .append(csvCell(f.getDepartureName())).append(',')
+              .append(csvCell(f.getDestinationName())).append(',')
+              .append(csvCell(f.getStartTime())).append(',')
+              .append(csvCell(f.getEndTime())).append(',')
+              .append(csvCell(f.getAltitudeReference())).append(',')
+              .append(csvCell(f.getStatus())).append(',')
+              .append(csvCell(f.getReviewNote())).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private String csvCell(Object val) {
+        if (val == null) return "";
+        String s = String.valueOf(val);
+        if (s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r")) {
+            return '"' + s.replace("\"", "\"\"") + '"';
+        }
+        return s;
+    }
 }

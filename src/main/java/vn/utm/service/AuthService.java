@@ -104,6 +104,13 @@ public class AuthService {
                 .orElseThrow(() -> new AuthRequiredException("Phiên đăng nhập không còn hợp lệ"));
     }
 
+    public Optional<UserAccount> findAccount(HttpSession session) {
+        if (session == null) return Optional.empty();
+        Object id = session.getAttribute(SESSION_ACCOUNT_ID);
+        if (!(id instanceof UUID)) return Optional.empty();
+        return users.findById((UUID) id).filter(this::usable);
+    }
+
     private boolean usable(UserAccount user) {
         return user.isActive() && user.getDeletedAt() == null && !user.isLocked()
                 && user.getRole().isActive() && user.getRole().getDeletedAt() == null;
@@ -116,6 +123,7 @@ public class AuthService {
     public void requireStaff(UserAccount user) { if (!isStaff(user)) deny(); }
     public void requireOperator(UserAccount user) { if (!user.getRole().getCode().equals("OPERATOR")) deny(); }
     public void requireAdmin(UserAccount user) { if (!user.getRole().getCode().equals("ADMIN")) deny(); }
+    public void requireManager(UserAccount user) { if (!user.getRole().getCode().equals("MANAGER")) deny(); }
     public void requireOwner(UUID id, UserAccount user) {
         if (!isStaff(user) && !id.equals(user.getId())) deny();
     }

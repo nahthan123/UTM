@@ -86,9 +86,11 @@
     <nav id="nav">
       <button class="nav-item active" data-tab="drones">◎ Phương tiện</button>
       <button class="nav-item" data-tab="flights">↗ Kế hoạch bay</button>
+      <button class="nav-item" data-tab="geozones">⛔ Vùng cấm bay</button>
+      <button class="nav-item" data-tab="monitoring">📡 Giám sát bay</button>
       <button class="nav-item" data-tab="users" data-staff hidden>♙ Người dùng</button>
       <button class="nav-item" data-tab="roles" data-admin hidden>◇ Vai trò</button>
-      <button class="nav-item" data-tab="logs" data-staff hidden>≡ Nhật ký</button>
+      <button class="nav-item" data-tab="logs">≡ Nhật ký</button>
       <button class="nav-item" data-tab="integrations" data-staff hidden>⇄ Tích hợp</button>
     </nav>
     <div class="portal-account"><b id="identity"></b><small id="roleName"></small><button id="logout">Đăng xuất</button></div>
@@ -115,7 +117,7 @@
     </section>
     <section id="flightsPanel" hidden>
       <div class="portal-card" id="flightSubmitCard" data-operator><h2>Nộp kế hoạch bay</h2>
-        <form id="flightForm">
+        <form id="flightForm" novalidate>
           <label>Chọn UAV tham gia<select name="droneIds" id="droneSelect" multiple size="5" required aria-describedby="droneSelectionHelp"></select><small id="droneSelectionHelp">Giữ Ctrl/Command để chọn nhiều UAV, tối đa 50 UAV mỗi đợt gửi. Mỗi UAV có một kế hoạch được duyệt riêng trong cùng đợt gửi.</small></label>
           <p class="selection-count" id="uavCount" aria-live="polite">Đã chọn 0 UAV</p>
           <div class="portal-grid">
@@ -124,14 +126,40 @@
             <label>Cất cánh dự kiến (UTC+7)<input name="startTime" type="datetime-local" required></label>
             <label>Hạ cánh dự kiến (UTC+7)<input name="endTime" type="datetime-local" required></label>
           </div>
-          <div><h3>Lộ trình 4D</h3><p class="muted">Waypoint đầu là điểm đi, waypoint cuối là điểm đến; thời gian phải khớp giờ cất/hạ cánh. Độ cao 0–120 m so với mặt đất (AGL), theo cấu hình mô phỏng đề tài. Các UAV cùng đợt gửi dùng lộ trình này; việc kiểm tra xung đột giữa UAV sẽ do khối lập kế hoạch đảm nhiệm.</p><div id="waypoints"></div><button id="addWaypoint" type="button">+ Thêm waypoint</button></div>
-          <div class="portal-actions"><button class="primary">Nộp kế hoạch chờ duyệt</button></div>
+          <div><h3>Lộ trình 4D</h3><p class="muted">Waypoint đầu là điểm đi, waypoint cuối là điểm đến; thời gian phải khớp giờ cất/hạ cánh. Độ cao 0–120 m so với mặt đất (AGL), theo cấu hình mô phỏng đề tài. Các UAV cùng đợt gửi dùng lộ trình này; việc kiểm tra xung đột giữa UAV sẽ do khối lập kế hoạch đảm nhiệm.</p><div id="waypoints"></div><div class="preset-tools"><button id="addWaypoint" type="button">+ Thêm waypoint</button><button id="fillSampleRoute" type="button">Điền nhanh lộ trình mẫu Đà Nẵng</button></div></div>
+          <p id="flightFormError" class="form-error" role="alert" hidden></p>
+          <div class="portal-actions"><button type="submit" class="primary">Nộp kế hoạch chờ duyệt</button></div>
         </form>
       </div>
       <div class="portal-card" id="flightReviewCard" data-staff hidden>
-        <h2>Hàng chờ duyệt kế hoạch</h2>
-        <p class="muted">Kiểm tra người vận hành, UAV, thời gian và quỹ đạo 4D trong danh sách bên dưới trước khi duyệt hoặc từ chối. Mặc định chỉ hiển thị kế hoạch chờ duyệt. Chưa kiểm tra xung đột tự động.</p>
-        <p class="muted">ADMIN duyệt hoặc từ chối từng kế hoạch, có thể gửi ghi chú cho người vận hành. MANAGER theo dõi và cập nhật Đang bay / Hoàn thành. Kế hoạch được duyệt sẽ gửi đến hai đầu nhận mô phỏng và giám sát. Chế độ MOCK chỉ xác nhận nhận dữ liệu, không chạy chuyến bay hoặc kiểm tra xung đột.</p>
+        <h2>Theo dõi &amp; Xét duyệt kế hoạch</h2>
+        <p class="muted">ADMIN duyệt, từ chối hoặc thu hồi phép bay khi có hạn chế khẩn cấp. MANAGER theo dõi/hậu kiểm toàn bộ kế hoạch bay và xuất báo cáo CSV.</p>
+      </div>
+    </section>
+    <section id="geozonesPanel" hidden>
+      <div class="portal-card" id="geozoneFormCard" data-manager hidden>
+        <h2>Thiết lập vùng cấm / hạn chế bay (Static &amp; Dynamic UVR/TFR)</h2>
+        <form id="geozoneForm"><input name="id" type="hidden">
+          <div class="portal-grid">
+            <label>Mã vùng<input name="code" maxlength="50" required placeholder="Ví dụ: TFR-VIP-01"></label>
+            <label>Tên vùng<input name="name" maxlength="150" required placeholder="Ví dụ: Vùng hạn chế sự kiện Cầu Rồng"></label>
+            <label>Loại vùng<select name="zoneType" required><option value="NFZ">NFZ · Vùng cấm bay tuyệt đối</option><option value="RESTRICTED">RESTRICTED · Vùng hạn chế độ cao/giờ</option><option value="TFR_UVR">TFR / UVR · Hạn chế động tạm thời</option></select></label>
+            <label>Tính chất<select name="category" required><option value="STATIC">STATIC · Tĩnh (cố định)</option><option value="DYNAMIC">DYNAMIC · Động (khẩn cấp)</option></select></label>
+            <label>Vĩ độ tâm<input name="centerLat" type="number" step="any" min="-90" max="90" required placeholder="16.0612"></label>
+            <label>Kinh độ tâm<input name="centerLng" type="number" step="any" min="-180" max="180" required placeholder="108.2245"></label>
+            <label>Bán kính (m)<input name="radiusMeters" type="number" step="any" min="1" max="50000" required placeholder="500"></label>
+            <label>Độ cao tối thiểu (m AGL)<input name="minAltitudeM" type="number" step="any" min="0" value="0" required></label>
+            <label>Độ cao tối đa (m AGL)<input name="maxAltitudeM" type="number" step="any" min="0" value="120" required></label>
+            <label>Mô tả<input name="description" maxlength="500" placeholder="Lý do thiết lập vùng cấm/hạn chế"></label>
+            <label>Hiệu lực từ (UTC+7, tùy chọn)<input name="effectiveFrom" type="datetime-local"></label>
+            <label>Hiệu lực đến (UTC+7, tùy chọn)<input name="effectiveTo" type="datetime-local"></label>
+          </div>
+          <div class="portal-actions"><button class="primary">Lưu vùng cấm / hạn chế</button><button type="button" data-reset="geozoneForm">Nhập mới</button></div>
+        </form>
+      </div>
+      <div class="portal-card" id="geozoneInfoCard">
+        <h2>Không phận &amp; Vùng cấm/hạn chế bay Đà Nẵng</h2>
+        <p class="muted">MANAGER (Nhà nước) thiết lập vùng cấm bay tĩnh (NFZ/Restricted) và phát hành hạn chế động khẩn cấp (UVR/TFR). ADMIN và Người vận hành tra cứu để đối chiếu khi lập và duyệt kế hoạch bay.</p>
       </div>
     </section>
     <section id="usersPanel" hidden>
@@ -165,16 +193,28 @@
       <div class="portal-card"><h2>Nhật ký hệ thống</h2><p class="muted">Tra cứu thao tác của người dùng và các thay đổi trong hệ thống.</p><button id="clearLogs" class="danger" data-admin>Xóa mềm nhật ký</button></div>
     </section>
     <section id="integrationsPanel" hidden>
-      <div class="portal-card"><h2>Chuyển kế hoạch sang mô phỏng và giám sát</h2><p class="muted">Theo dõi tối đa 100 bản tin mới nhất theo bộ lọc và phản hồi từ từng đầu nhận. Phản hồi MOCK chỉ chứng minh đã tiếp nhận dữ liệu trong hệ thống giả lập, chưa xác nhận UAV đã bay. ADMIN có thể gửi lại bản tin lỗi hoặc đang chờ.</p></div>
+      <div class="portal-card"><h2>Chuyển kế hoạch sang mô phỏng và giám sát</h2><p class="muted">Theo dõi tối đa 100 bản tin mới nhất theo bộ lọc và phản hồi từ từng đầu nhận. Khi ở chế độ HTTP thực, cả Khối 4 (Giám sát :8000) và Khối 2 (Mô phỏng :8001) đều nhận đơn bay đã duyệt và báo xanh Đã chuyển thành công.</p></div>
     </section>
-    <div class="portal-card">
-      <div class="portal-list-heading"><h2 id="listTitle">Phương tiện đã đăng ký</h2><button id="refresh">Làm mới</button></div>
+    <section id="monitoringPanel" hidden>
+      <div class="portal-card" id="monitoringFeedbackCard">
+        <div class="portal-list-heading">
+          <h2>📡 Giám sát Thời gian thực &amp; Quyết định từ Khối 4 (Nhật Anh)</h2>
+          <span class="portal-status" id="monitoringFeedStatus">Đang chờ tín hiệu từ Khối 4 (:3000)...</span>
+        </div>
+        <p class="muted" id="monitoringScopeNote">Dữ liệu vị trí thực tế, tọa độ dự đoán 12s tới và hành lang bay nhận trực tiếp từ Khối 4 (Nhật Anh) mỗi 2 giây.</p>
+        <div class="portal-table" id="monitoringProgressTable"><p class="empty">Chưa nhận báo cáo giám sát nào từ Khối 4.</p></div>
+        <h3 style="margin-top:20px">Quyết định điều phối nhận từ Khối 4</h3>
+        <div class="portal-table" id="monitoringDecisionsTable"><p class="empty">Chưa có quyết định điều phối nào.</p></div>
+      </div>
+    </section>
+    <div class="portal-card" id="sharedListCard">
+      <div class="portal-list-heading"><h2 id="listTitle">Phương tiện đã đăng ký</h2><div class="portal-actions"><button type="button" id="exportFlightsCsv" hidden>⬇ Xuất báo cáo lịch sử bay (CSV)</button><button id="refresh">Làm mới</button></div></div>
       <div class="portal-toolbar">
         <input id="keyword" placeholder="Tìm số sê-ri" aria-label="Từ khóa tìm kiếm">
         <select id="activeFilter" aria-label="Trạng thái bản ghi"><option value="true">Đang hiệu lực</option><option value="false">Đã xóa mềm / ngừng hiệu lực</option></select>
         <select id="lockedFilter" aria-label="Lọc khóa tài khoản" hidden><option value="">Tất cả tài khoản</option><option value="true">Đang khóa</option><option value="false">Không khóa</option></select>
         <select id="flightFilter" aria-label="Lọc kế hoạch bay" hidden><option value="">Tất cả kế hoạch</option><option value="PENDING">Chờ duyệt</option><option value="APPROVED">Đã duyệt</option><option value="ACTIVE">Đang bay</option><option value="COMPLETED">Hoàn thành</option><option value="REJECTED">Bị từ chối</option><option value="CANCELLED">Đã hủy</option><option value="approved">Đã duyệt / Đang bay</option></select>
-        <select id="integrationFilter" aria-label="Lọc trạng thái chuyển dữ liệu" hidden><option value="">Tất cả bản tin</option><option value="PENDING">Đang chờ</option><option value="MOCK_DELIVERED">Mock đã nhận</option><option value="DELIVERED">Giám sát đã nhận</option><option value="SUPERSEDED">Đã có bản tin mới hơn</option><option value="FAILED">Lỗi chuyển dữ liệu</option></select>
+        <select id="integrationFilter" aria-label="Lọc trạng thái chuyển dữ liệu" hidden><option value="">Tất cả bản tin</option><option value="PENDING">Đang chờ</option><option value="MOCK_DELIVERED">Mock đã nhận</option><option value="DELIVERED">Đã chuyển thành công</option><option value="SUPERSEDED">Đã có bản tin mới hơn</option><option value="FAILED">Lỗi chuyển dữ liệu</option></select>
         <select id="sortFilter" aria-label="Sắp xếp"><option value="created_at,desc">Mới tạo trước</option><option value="created_at,asc">Cũ tạo trước</option></select>
         <select id="sizeFilter" aria-label="Số bản ghi mỗi trang"><option value="10">10 bản ghi</option><option value="25">25 bản ghi</option><option value="50">50 bản ghi</option><option value="100">100 bản ghi</option></select>
         <button id="search">Tìm</button>
