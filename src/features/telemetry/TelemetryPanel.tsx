@@ -14,25 +14,74 @@ import {
   Battery,
   HelpCircle,
   Database,
+  Send,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { formatCoordinates } from '../../utils/coordinates';
 import { formatUtcTime } from '../../utils/time';
+import { predictForwardPath } from '../../services/prediction/TrajectoryPredictor';
 
 export const TelemetryPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'TELEMETRY' | 'PROFILE' | 'PROVENANCE' | 'ALERTS'>('TELEMETRY');
+  const [vuongExpanded, setVuongExpanded] = useState(true);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [cmdAlt, setCmdAlt] = useState('90');
+  const [cmdSpeed, setCmdSpeed] = useState('14');
+  const [cmdHeading, setCmdHeading] = useState('90');
+  const [cmdFeedback, setCmdFeedback] = useState<string | null>(null);
 
   const {
+    mode,
+    wsUrl,
     selectedUavId,
     uavStates,
     flightPlans,
     alerts,
+    vuongOutboundUrl,
+    vuongOutboundEnabled,
+    vuongOutboundLogs,
+    setVuongOutboundEnabled,
+    clearVuongOutboundLogs,
     acknowledgeAlert,
     clearAlerts,
   } = useMonitoringStore();
 
+  const sendKhoi2Command = async (commandType: string, parameters: Record<string, unknown> = {}) => {
+    if (!selectedUavId) return;
+    let cmdUrl = 'http://localhost:8001/api/commands';
+    try {
+      const parsed = new URL(wsUrl);
+      const proto = parsed.protocol === 'wss:' ? 'https:' : 'http:';
+      cmdUrl = `${proto}//${parsed.host}/api/commands`;
+    } catch {
+      // fallback default
+    }
+    try {
+      const res = await fetch(cmdUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uav_id: selectedUavId, command_type: commandType, parameters }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.feedback?.message) {
+        setCmdFeedback(`✔ ${data.feedback.message}`);
+      } else {
+        setCmdFeedback(`⚠ Lỗi: ${data?.detail?.feedback?.message || res.statusText}`);
+      }
+    } catch {
+      setCmdFeedback('⚠ Không kết nối được Khối 2 (:8001)');
+    }
+  };
+
   const selectedUav = selectedUavId ? uavStates[selectedUavId] : null;
   const plan = selectedUav && selectedUav.flight_plan_id ? flightPlans[selectedUav.flight_plan_id] : null;
   const profile = selectedUav?.uav_profile || plan?.uav_profile;
+  const forwardPred = selectedUav ? predictForwardPath(selectedUav, plan || undefined, 12, 2) : null;
+  const predTarget =
+    forwardPred && forwardPred.points.length > 1
+      ? forwardPred.points[forwardPred.points.length - 1]
+      : null;
   const unreadAlertsCount = alerts.filter((a) => !a.acknowledged).length;
 
   return (
@@ -104,13 +153,8 @@ export const TelemetryPanel: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="font-mono font-bold text-sm text-cyan-300">
-                      {selectedUav.callsign || selectedUav.uav_id}
+                      {selectedUav.uav_id}
                     </span>
-                    {selectedUav.callsign && (
-                      <span className="text-[10px] text-slate-400 font-mono ml-1.5">
-                        [{selectedUav.uav_id}]
-                      </span>
-                    )}
                   </div>
                   <div className="flex items-center gap-1.5">
                     {profile && (
@@ -148,6 +192,106 @@ export const TelemetryPanel: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* Direct UAV Flight Controls -> Khoi 2 PX4 SITL */}
+              {mode === 'LIVE' && (
+                <div className="bg-slate-900/80 border border-cyan-900/70 p-2.5 rounded-lg space-y-2">
+                  <div className="text-[10px] uppercase font-bold text-cyan-300 flex items-center justify-between">
+                    <span>🎮 Điều khiển trực tiếp ({selectedUav.uav_id})</span>
+                    <span className="text-[9px] font-mono text-slate-400">➔ Khối 2 PX4</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 text-[10.5px] font-semibold">
+                    <button
+                      onClick={() => void sendKhoi2Command('TAKEOFF')}
+                      className="py-1 px-1.5 rounded bg-emerald-700/80 hover:bg-emerald-600 text-white"
+                    >
+                      Cất cánh
+                    </button>
+                    <button
+                      onClick={() => void sendKhoi2Command('RESUME_MISSION')}
+                      className="py-1 px-1.5 rounded bg-cyan-700/80 hover:bg-cyan-600 text-white"
+                    >
+                      Bay tuyến
+                    </button>
+                    <button
+                      onClick={() => void sendKhoi2Command('HOLD_POSITION')}
+                      className="py-1 px-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-100"
+                    >
+                      Giữ chỗ
+                    </button>
+                    <button
+                      onClick={() => void sendKhoi2Command('RTL')}
+                      className="py-1 px-1.5 rounded bg-indigo-700/80 hover:bg-indigo-600 text-white"
+                    >
+                      Về RTL
+                    </button>
+                    <button
+                      onClick={() => void sendKhoi2Command('LAND')}
+                      className="col-span-2 py-1 px-1.5 rounded bg-amber-700/80 hover:bg-amber-600 text-white"
+                    >
+                      Hạ cánh (0m)
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+                    <div className="flex gap-1">
+                      <input
+                        type="number"
+                        value={cmdAlt}
+                        onChange={(e) => setCmdAlt(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-slate-200 font-mono"
+                        title="Độ cao (m)"
+                      />
+                      <button
+                        onClick={() =>
+                          void sendKhoi2Command('CHANGE_ALTITUDE', { target_altitude_m: Number(cmdAlt) })
+                        }
+                        className="px-1.5 rounded bg-purple-700 hover:bg-purple-600 text-white font-semibold shrink-0"
+                      >
+                        Cao
+                      </button>
+                    </div>
+                    <div className="flex gap-1">
+                      <input
+                        type="number"
+                        value={cmdSpeed}
+                        onChange={(e) => setCmdSpeed(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-slate-200 font-mono"
+                        title="Tốc độ (m/s)"
+                      />
+                      <button
+                        onClick={() =>
+                          void sendKhoi2Command('CHANGE_SPEED', { target_speed_mps: Number(cmdSpeed) })
+                        }
+                        className="px-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white font-semibold shrink-0"
+                      >
+                        Tốc độ
+                      </button>
+                    </div>
+                    <div className="flex gap-1">
+                      <input
+                        type="number"
+                        value={cmdHeading}
+                        onChange={(e) => setCmdHeading(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-slate-200 font-mono"
+                        title="Hướng (°)"
+                      />
+                      <button
+                        onClick={() =>
+                          void sendKhoi2Command('CHANGE_HEADING', { target_heading_deg: Number(cmdHeading) })
+                        }
+                        className="px-1.5 rounded bg-teal-700 hover:bg-teal-600 text-white font-semibold shrink-0"
+                      >
+                        Hướng
+                      </button>
+                    </div>
+                  </div>
+                  {cmdFeedback && (
+                    <div className="text-[10px] font-mono text-emerald-300 bg-slate-950/70 px-2 py-1 rounded border border-slate-800">
+                      {cmdFeedback}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Position & Altitude (Strictly preserves AGL or MSL) */}
               <div className="bg-slate-900/80 border border-slate-800 p-2.5 rounded-lg">
@@ -230,12 +374,42 @@ export const TelemetryPanel: React.FC = () => {
                 </div>
               </div>
 
+              {/* Forward 12s Prediction Summary ("- - - -") */}
+              <div className="bg-slate-900/80 border border-amber-800/60 p-2.5 rounded-lg">
+                <div className="text-[10px] uppercase font-bold text-amber-300 mb-1.5 flex items-center justify-between">
+                  <span>Dự đoán 12s tới (- - - -)</span>
+                  <span className="font-mono text-[10px] text-slate-400">
+                    Bù trễ: {forwardPred?.latencyCompensatedSec ?? 0}s ({Math.round(selectedUav.data_quality.latency_ms || 0)}ms)
+                  </span>
+                </div>
+                {predTarget ? (
+                  <div className="space-y-1 font-mono text-[11px]">
+                    <div className="flex justify-between text-slate-300">
+                      <span className="text-slate-500">Tọa độ 12s tới:</span>
+                      <span className="text-amber-300 font-semibold">
+                        {formatCoordinates(predTarget.latitude, predTarget.longitude)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-300">
+                      <span className="text-slate-500">Độ cao dự kiến:</span>
+                      <span className="text-amber-200 font-semibold">
+                        {Math.round(predTarget.altitude_m)} m {selectedUav.position.altitude_reference}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-slate-500 italic">
+                    Tạm dừng ngoại suy (tín hiệu trễ hoặc UAV đứng yên chưa có tuyến)
+                  </div>
+                )}
+              </div>
+
               {/* 4D Strategic Plan Comparison or Unlinked Notice */}
               {selectedUav.plan_deviation ? (
                 <div className="bg-slate-900/80 border border-slate-800 p-2.5 rounded-lg">
                   <div className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 flex items-center gap-1">
                     <Shield className="w-3.5 h-3.5 text-cyan-400" />
-                    Đối chiếu Kế hoạch bay 4D (Phần 3)
+                    Đối chiếu Kế hoạch bay 4D
                   </div>
 
                   <div className="space-y-1.5 font-mono text-[11px]">
@@ -349,7 +523,7 @@ export const TelemetryPanel: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Độ tin cậy Phần 5:</span>
+                    <span className="text-slate-500">Độ tin cậy dữ liệu:</span>
                     <span
                       className={`font-bold ${
                         selectedUav.data_quality.confidence === 'HIGH'
@@ -580,6 +754,115 @@ export const TelemetryPanel: React.FC = () => {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Compact Collapsible Vuong Outbound Card */}
+      <div className="border-t border-slate-800 bg-slate-950 text-xs">
+        <div className="px-3 py-2 flex items-center justify-between gap-2 bg-slate-900/70">
+          <button
+            onClick={() => setVuongExpanded((v) => !v)}
+            className="flex items-center gap-1.5 text-left font-semibold text-slate-200 hover:text-white min-w-0"
+          >
+            <Send className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="truncate">Đầu ra gửi về Vương</span>
+            <span className="px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 font-mono text-[10px]">
+              {vuongOutboundLogs.length}
+            </span>
+            {vuongExpanded ? (
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            ) : (
+              <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setVuongOutboundEnabled(!vuongOutboundEnabled)}
+            className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold border transition-colors shrink-0 ${
+              vuongOutboundEnabled
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+            }`}
+          >
+            {vuongOutboundEnabled ? 'BẬT' : 'TẮT'}
+          </button>
+        </div>
+
+        {vuongExpanded && (
+          <div className="p-2.5 space-y-2 max-h-64 overflow-y-auto border-t border-slate-800/80">
+            <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
+              <span className="truncate" title={vuongOutboundUrl}>
+                POST {vuongOutboundUrl}
+              </span>
+              {vuongOutboundLogs.length > 0 && (
+                <button
+                  onClick={clearVuongOutboundLogs}
+                  className="text-slate-500 hover:text-rose-400 shrink-0 flex items-center gap-0.5"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Xóa
+                </button>
+              )}
+            </div>
+
+            {vuongOutboundLogs.length === 0 ? (
+              <div className="py-3 text-center text-[11px] text-slate-500">
+                {vuongOutboundEnabled
+                  ? 'Đang chờ nhịp gửi kế tiếp (2s/lần)...'
+                  : 'Bật nút BẬT ở trên để gửi tiến độ & quyết định về Vương'}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {vuongOutboundLogs.slice(0, 6).map((log) => {
+                  const isOpen = expandedLogId === log.id;
+                  return (
+                    <div
+                      key={log.id}
+                      className="rounded border border-slate-800 bg-slate-900/70 p-2 text-[10px]"
+                    >
+                      <button
+                        onClick={() => setExpandedLogId(isOpen ? null : log.id)}
+                        className="w-full text-left flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono font-semibold text-slate-200 truncate">
+                            {log.uavId} ·{' '}
+                            <span
+                              className={
+                                log.eventType === 'monitoring.decision'
+                                  ? 'text-amber-300'
+                                  : 'text-cyan-300'
+                              }
+                            >
+                              {log.eventType}
+                            </span>
+                          </div>
+                          <div className="text-slate-400 truncate mt-0.5">{log.summary}</div>
+                        </div>
+                        <span
+                          className={`px-1.5 py-0.5 rounded font-mono shrink-0 ${
+                            log.status === 'SENT'
+                              ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-700/60'
+                              : 'bg-rose-950/90 text-rose-300 border border-rose-700/60'
+                          }`}
+                        >
+                          {log.status === 'SENT'
+                            ? `${log.httpStatus ?? 200} OK`
+                            : log.errorMessage || 'Lỗi kết nối'}
+                        </span>
+                      </button>
+
+                      {isOpen && (
+                        <pre className="mt-2 p-2 rounded bg-slate-950 border border-slate-800 text-[9px] font-mono text-slate-300 overflow-x-auto max-h-36">
+                          {JSON.stringify(log.payload, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
