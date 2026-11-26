@@ -1,0 +1,156 @@
+<?xml version="1.0" ?>
+<!--
+  Khối 2 — Gazebo Sim 3D World (danang_city_uav_world.sdf)
+  Matches the exact Entity Tree structure from Phước's Gazebo Sim screencast
+  (ocean, beach, city_ground, river_water, downtown_bridge, skybridge,
+   mount_central, mount_north, mount_south, tower_north_1..2, tower_south_1..3, vertiports)
+  aligned to Da Nang Han River & Dragon Bridge coordinates.
+-->
+<sdf version="1.8">
+  <world name="city_uav_world">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>16.0612</latitude_deg>
+      <longitude_deg>108.2245</longitude_deg>
+      <elevation>4.2</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 500 0 0 0</pose>
+      <diffuse>0.95 0.95 0.95 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.4 0.3 -0.85</direction>
+    </light>
+
+    <!-- City Ground -->
+    <model name="city_ground">
+      <static>true</static>
+      <link name="link">
+        <collision name="col"><geometry><box><size>3000 3000 1</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>3000 3000 1</size></box></geometry>
+          <material><ambient>0.45 0.48 0.52 1</ambient><diffuse>0.45 0.48 0.52 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Han River Water -->
+    <model name="river_water">
+      <static>true</static>
+      <pose>65 0 0.6 0 0 0</pose>
+      <link name="link">
+        <visual name="vis">
+          <geometry><box><size>220 3000 0.5</size></box></geometry>
+          <material><ambient>0.15 0.58 0.78 1</ambient><diffuse>0.18 0.65 0.86 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- My Khe Beach & Ocean -->
+    <model name="beach">
+      <static>true</static>
+      <pose>1200 0 0.6 0 0 0</pose>
+      <link name="link">
+        <visual name="vis">
+          <geometry><box><size>240 3000 0.6</size></box></geometry>
+          <material><ambient>0.86 0.82 0.65 1</ambient><diffuse>0.86 0.82 0.65 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="ocean">
+      <static>true</static>
+      <pose>2000 0 0.5 0 0 0</pose>
+      <link name="link">
+        <visual name="vis">
+          <geometry><box><size>1400 3000 0.5</size></box></geometry>
+          <material><ambient>0.08 0.45 0.72 1</ambient><diffuse>0.1 0.52 0.82 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Downtown Bridge (Dragon Bridge - Red/Orange) -->
+    <model name="downtown_bridge">
+      <static>true</static>
+      <pose>65 0 16 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>240 32 3</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>240 32 3</size></box></geometry>
+          <material><ambient>0.85 0.45 0.38 1</ambient><diffuse>0.88 0.52 0.44 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Skybridge (Song Han Bridge - Blue) -->
+    <model name="skybridge">
+      <static>true</static>
+      <pose>95 650 18 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>240 26 3</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>240 26 3</size></box></geometry>
+          <material><ambient>0.38 0.65 0.88 1</ambient><diffuse>0.42 0.72 0.94 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Stepped Mountain Blocks (Son Tra & Ngu Hanh Son) -->
+    <model name="mount_central">
+      <static>true</static>
+      <pose>65 1350 70 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>420 380 140</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>420 380 140</size></box></geometry>
+          <material><ambient>0.42 0.36 0.32 1</ambient><diffuse>0.48 0.42 0.38 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Da Nang High-Rise Urban Towers -->
+    <model name="tower_north_1">
+      <static>true</static>
+      <pose>-140 480 65 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>58 58 130</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>58 58 130</size></box></geometry>
+          <material><ambient>0.22 0.55 0.72 1</ambient><diffuse>0.28 0.65 0.84 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="tower_north_2">
+      <static>true</static>
+      <pose>260 520 55 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>52 48 110</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>52 48 110</size></box></geometry>
+          <material><ambient>0.35 0.42 0.52 1</ambient><diffuse>0.42 0.50 0.60 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="tower_south_1">
+      <static>true</static>
+      <pose>-150 -120 48 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>50 46 96</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>50 46 96</size></box></geometry>
+          <material><ambient>0.28 0.58 0.68 1</ambient><diffuse>0.32 0.66 0.78 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

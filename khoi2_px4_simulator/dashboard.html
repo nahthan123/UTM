@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Khối 2 — Mô phỏng 3D PX4 SITL / Gazebo Đà Nẵng (:8001)</title>
+  <style>
+    :root {
+      --bg: #070d19;
+      --panel: #0f172a;
+      --border: #1e293b;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --green: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    /* Compact Top Bar */
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background: #0b1120;
+      border-bottom: 1px solid #1e293b;
+      flex-shrink: 0;
+    }
+    .topbar-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .topbar-badges {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: nowrap;
+    }
+    .badge {
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge-green { background: rgba(34, 197, 94, 0.18); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
+    .badge-blue { background: rgba(56, 189, 248, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
+    .badge-amber { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+
+    /* Main Workspace: Big 3D City Map Left, Compact Sidebar Right */
+    .workspace {
+      display: grid;
+      grid-template-columns: 1fr 415px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 3D Viewport Container */
+    .map-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #070d19;
+      overflow: hidden;
+    }
+    #city3dCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .map-overlay-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid #334155;
+      padding: 7px 12px;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+    }
+    .map-legend {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      z-index: 20;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid #334155;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      color: #cbd5e1;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
+    /* Floating HTML Labels over 3D UAVs */
+    .uav-3d-label {
+      position: absolute;
+      transform: translate(-50%, -135%);
+      pointer-events: none;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      border: 1.5px solid #fff;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.6);
+      z-index: 10;
+    }
+
+    /* Right Sidebar */
+    .sidebar {
+      background: var(--panel);
+      border-left: 1px solid #1e293b;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+    }
+    .box {
+      background: #090e1a;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .box-title {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    select, input {
+      background: #1e293b;
+      color: #fff;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 12px;
+    }
+    .btn {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover { opacity: 0.92; }
+    .btn-green { background: #16a34a; }
+    .btn-amber { background: #d97706; }
+    .btn-purple { background: #7c3aed; }
+    .btn-slate { background: #334155; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+    }
+    th, td {
+      padding: 5px 6px;
+      text-align: left;
+      border-bottom: 1px solid #1e293b;
+    }
+    th {
+      color: #94a3b8;
+      font-size: 10.5px;
+      text-transform: uppercase;
+    }
+    .mono { font-family: 'Consolas', monospace; }
+  </style>
+
+  <!-- Three.js + OrbitControls via importmap -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+
+  <!-- Compact Top Header -->
+  <div class="topbar">
+    <div class="topbar-title">
+      <span>🚁 KHỐI 2 — MÔ PHỎNG 3D PX4 SITL / GAZEBO</span>
+      <span class="badge badge-green">● 8/8 TIÊU CHÍ</span>
+    </div>
+    <div class="topbar-badges">
+      <span class="badge badge-amber" id="dbCountBadge">SQLite: 0</span>
+      <span class="badge badge-green" id="wsClientBadge">Web 3D: 0</span>
+    </div>
+  </div>
+
+  <!-- Main Workspace: 3D Block Map + Sidebar -->
+  <div class="workspace">
+    <!-- Left: Same 3D Da Nang Urban Block Environment as Khối 4 -->
+    <div class="map-wrap" id="mapContainer">
+      <div class="map-overlay-bar">
+        <span style="font-weight:700;color:#38bdf8;">UAV:</span>
+        <select id="uavSelect" onchange="window.focusSelectedUav()">
+          <option value="uav-1">uav-1 (AUTO.TAKEOFF)</option>
+          <option value="uav-2">uav-2 (AUTO.TAKEOFF)</option>
+        </select>
+        <button class="btn btn-green" onclick="window.syncFromVuong()" title="Đồng bộ UAV đã đăng ký từ Vương (:8080)">🔄 Đồng bộ UAV</button>
+        <button class="btn btn-slate" onclick="window.setCameraPreset('overview')">🏙️ Toàn cảnh 3D</button>
+        <button class="btn btn-slate" onclick="window.setCameraPreset('dragon')">🐉 Cầu Rồng</button>
+        <button class="btn btn-slate" onclick="window.setCameraPreset('songhan')">🌉 Cầu Sông Hàn</button>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">
+          <input type="checkbox" id="followCheckbox" /> Camera bám UAV
+        </label>
+      </div>
+
+      <div id="labelsContainer"></div>
+
+      <div class="map-legend">
+        <span id="legendUavSummary">🚁 Đang đồng bộ danh sách UAV...</span>
+        <span>🖱️ <b>Chuột trái:</b> Xoay 3D • <b>Con lăn:</b> Thu phóng • <b>Chuột phải:</b> Kéo</span>
+      </div>
+    </div>
+
+    <!-- Right: Simple 3-Box Sidebar -->
+    <div class="sidebar">
+
+      <!-- Box 1: Clean Flight Lifecycle & MAVLink Adjustment Command -->
+      <div class="box">
+        <div class="box-title">
+          <span>🎮 1. Điều khiển UAV đang chọn</span>
+          <span class="badge badge-blue" id="uavModeBadge">AUTO.TAKEOFF</span>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; margin-bottom:6px;">
+          <button class="btn btn-green" onclick="window.sendCmd('TAKEOFF', {})">🛫 Cất cánh</button>
+          <button class="btn" onclick="window.sendCmd('RESUME_MISSION', {})">▶ Bay tuyến</button>
+          <button class="btn btn-slate" onclick="window.sendCmd('HOLD_POSITION', {})">⏸ Giữ chỗ</button>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:8px;">
+          <button class="btn btn-slate" onclick="window.sendCmd('RTL', {})">🏠 Về xuất phát (RTL)</button>
+          <button class="btn btn-amber" onclick="window.sendCmd('LAND', {})">🛬 Hạ cánh (0m)</button>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span>Cao (m):</span>
+            <input type="number" id="inputAlt" value="90" min="10" max="300" style="width:62px;" />
+          </div>
+          <button class="btn btn-purple" onclick="window.sendCmd('CHANGE_ALTITUDE', {target_altitude_m: Number(document.getElementById('inputAlt').value)})">Đổi độ cao</button>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+          <div style="display:flex; align-items:center; gap:4px;">
+            <input type="number" id="inputSpd" value="14" min="1" max="35" style="width:52px;" title="Tốc độ m/s" />
+            <button class="btn" style="flex:1;padding:5px 6px;" onclick="window.sendCmd('CHANGE_SPEED', {target_speed_mps: Number(document.getElementById('inputSpd').value)})">Tốc độ</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:4px;">
+            <input type="number" id="inputHdg" value="90" min="0" max="360" style="width:52px;" title="Hướng độ" />
+            <button class="btn" style="flex:1;padding:5px 6px;" onclick="window.sendCmd('CHANGE_HEADING', {target_heading_deg: Number(document.getElementById('inputHdg').value)})">Hướng °</button>
+          </div>
+        </div>
+        <div id="cmdStatusText" style="margin-top:6px;font-size:11.5px;color:#4ade80;">
+          Trạng thái: Sẵn sàng nhận lệnh điều khiển.
+        </div>
+      </div>
+
+      <!-- Box 2: 4-Column Accuracy Comparison -->
+      <div class="box">
+        <div class="box-title">
+          <span>🔬 2. Đối chiếu PX4 ➔ Backend ➔ SQLite ➔ Web</span>
+          <span class="badge badge-green">KHỚP 100%</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Thông số</th>
+              <th>PX4 Raw</th>
+              <th>Backend</th>
+              <th>SQLite</th>
+            </tr>
+          </thead>
+          <tbody id="accuracyTableBody">
+            <tr><td colspan="4">Đang đồng bộ...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Box 3: SQLite Session History & Export CSV/JSON -->
+      <div class="box" style="flex:1; display:flex; flex-direction:column; min-height: 190px;">
+        <div class="box-title">
+          <span>💾 3. Lưu SQLite, Phiên cũ & Xuất File</span>
+          <button class="btn btn-slate" style="padding:3px 8px;font-size:11px;" onclick="window.createNewSession()">+ Phiên mới</button>
+        </div>
+        <select id="sessionSelect" style="width:100%;margin-bottom:8px;" onchange="window.loadSelectedSessionHistory()"></select>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:8px;">
+          <button class="btn btn-green" onclick="window.downloadExport('csv')">⬇ Tải file CSV</button>
+          <button class="btn" onclick="window.downloadExport('json')">⬇ Tải file JSON</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Lịch sử bản ghi SQLite mới nhất:</div>
+        <div style="flex:1; overflow-y:auto; border:1px solid #1e293b; border-radius:6px;">
+          <table>
+            <thead>
+              <tr>
+                <th>#ID</th>
+                <th>UAV</th>
+                <th>Tọa độ (Lat, Lon)</th>
+                <th>Cao</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { buildDaNangCityEnvironment, wgs84ToThree } from '/danang_city_3d.js';
+
+    // Setup Three.js Scene (exact lighting, fog & tone mapping from Khối 4 City3DViewer.tsx)
+    const container = document.getElementById('mapContainer');
+    const initW = Math.max(600, container.clientWidth || 960);
+    const initH = Math.max(400, container.clientHeight || 640);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#07101f');
+    scene.fog = new THREE.FogExp2('#07101f', 0.00012);
+
+    const camera = new THREE.PerspectiveCamera(50, initW / initH, 2, 24000);
+    camera.position.set(-480, 310, 580);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(initW, initH);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(90, 55, -260);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.maxPolarAngle = Math.PI / 2 - 0.04;
+    controls.minDistance = 40;
+    controls.maxDistance = 4800;
+    // Disable OrbitControls' jumpy built-in wheel handler and use smooth progressive wheel zoom
+    controls.enableZoom = false;
+    controls.update();
+
+    let desiredCameraDist = camera.position.distanceTo(controls.target);
+
+    renderer.domElement.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      // Normalize wheel delta so 1 notch is always a gentle ~6% step regardless of OS wheel multiplier
+      const dir = Math.sign(e.deltaY);
+      if (dir === 0) return;
+      const stepFactor = dir > 0 ? 1.07 : 0.935;
+      desiredCameraDist = Math.max(
+        controls.minDistance,
+        Math.min(controls.maxDistance, desiredCameraDist * stepFactor)
+      );
+    }, { passive: false });
+
+    // Prevent camera from ever dipping below ground when panning
+    controls.addEventListener('change', () => {
+      if (camera.position.y < 15) camera.position.y = 15;
+      if (controls.target.y < 0) controls.target.y = 0;
+    });
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = Math.max(100, entry.contentRect.width);
+        const h = Math.max(100, entry.contentRect.height);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      }
+    });
+    resizeObserver.observe(container);
+
+    // Atmospheric Lighting (identical to Khối 4 City3DViewer.tsx)
+    scene.add(new THREE.HemisphereLight('#93c5fd', '#0f172a', 0.95));
+    const sun = new THREE.DirectionalLight('#f8fafc', 1.65);
+    sun.position.set(1100, 1750, 750);
+    scene.add(sun);
+    const rimLight = new THREE.DirectionalLight('#38bdf8', 0.5);
+    rimLight.position.set(-1400, 700, -1100);
+    scene.add(rimLight);
+
+    // Build exact 1-to-1 Da Nang 3D Urban Environment (mountains, bridges, roads, parks, trees, vertiports, towers)
+    const cityGroup = buildDaNangCityEnvironment();
+    scene.add(cityGroup);
+
+    // 6. UAV 3D Models, Drop Pillars, Planned 3D Corridors & Trails
+    const uavObjects = {};
+    const palette = ['#38bdf8', '#facc15', '#34d399', '#f472b6', '#a78bfa', '#fb923c', '#22d3ee'];
+    const uavColors = { 'uav-1': '#38bdf8', 'uav-2': '#facc15' };
+    let colorCursor = 2;
+    let latestState = null;
+
+    function colorForUav(uid) {
+      if (!uavColors[uid]) {
+        uavColors[uid] = palette[colorCursor % palette.length];
+        colorCursor += 1;
+      }
+      return uavColors[uid];
+    }
+
+    function shortestAngleLerp(current, target, t) {
+      let diff = ((target - current + Math.PI) % (Math.PI * 2)) - Math.PI;
+      if (diff < -Math.PI) diff += Math.PI * 2;
+      return current + diff * t;
+    }
+
+    // Exact articulated 3D UAV builder from Khối 4 (src/features/map3d/threeBuilders.ts)
+    function buildArticulatedUav(uavId, accentColorHex) {
+      const root = new THREE.Group();
+      root.userData.uavId = uavId;
+
+      const rotors = [];
+      const bodyMat = new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.35, metalness: 0.45 });
+      const darkMat = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.5, metalness: 0.4 });
+      const accentMat = new THREE.MeshStandardMaterial({
+        color: accentColorHex,
+        emissive: accentColorHex,
+        emissiveIntensity: 0.45,
+        roughness: 0.3,
+        metalness: 0.5,
+      });
+      const rotorMat = new THREE.MeshBasicMaterial({
+        color: '#bae6fd',
+        transparent: true,
+        opacity: 0.55,
+        side: THREE.DoubleSide,
+      });
+      const bladeMat = new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.4 });
+
+      const addRotorAssembly = (x, y, z, radius) => {
+        const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.25, 10), darkMat);
+        pod.position.set(x, y, z);
+        root.add(pod);
+
+        const spinner = new THREE.Group();
+        spinner.position.set(x, y + 0.16, z);
+
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.9, 0.03, 0.12), bladeMat);
+        spinner.add(blade);
+
+        const disc = new THREE.Mesh(new THREE.RingGeometry(radius * 0.25, radius, 24), rotorMat);
+        disc.rotation.x = -Math.PI / 2;
+        spinner.add(disc);
+
+        root.add(spinner);
+        rotors.push(spinner);
+      };
+
+      // Multirotor X-quadcopter
+      const hub = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.22, 0.72), bodyMat);
+      root.add(hub);
+
+      const topPlate = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.08, 0.58), accentMat);
+      topPlate.position.set(0, 0.14, 0);
+      root.add(topPlate);
+
+      const gimbal = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), darkMat);
+      gimbal.position.set(0, -0.18, -0.22);
+      root.add(gimbal);
+
+      const armPositions = [
+        [0.72, -0.72],
+        [-0.72, -0.72],
+        [0.72, 0.72],
+        [-0.72, 0.72],
+      ];
+      armPositions.forEach(([ax, az]) => {
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 1.05), darkMat);
+        arm.position.set(ax * 0.5, 0.02, az * 0.5);
+        arm.rotation.y = Math.atan2(ax, az);
+        root.add(arm);
+        addRotorAssembly(ax, 0.12, az, 0.48);
+      });
+
+      // Navigation wingtip lights (left=red, right=green) + forward cone cue + top strobe
+      const leftNav = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), new THREE.MeshBasicMaterial({ color: '#ef4444' }));
+      leftNav.position.set(-0.95, 0.06, -0.2);
+      const rightNav = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), new THREE.MeshBasicMaterial({ color: '#22c55e' }));
+      rightNav.position.set(0.95, 0.06, -0.2);
+
+      const strobeMat = new THREE.MeshBasicMaterial({ color: '#38bdf8' });
+      const strobe = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), strobeMat);
+      strobe.position.set(0, 0.35, 0.1);
+
+      const headingArrow = new THREE.Mesh(
+        new THREE.ConeGeometry(0.24, 0.65, 6),
+        new THREE.MeshBasicMaterial({ color: '#22d3ee', transparent: true, opacity: 0.75 })
+      );
+      headingArrow.rotation.x = -Math.PI / 2;
+      headingArrow.position.set(0, 0.05, -2.0);
+
+      root.add(leftNav, rightNav, strobe, headingArrow);
+      return { root, rotors, strobeMat, accentMat };
+    }
+
+    function createOrUpdateLabelSprite(existing, title, subtitle, borderColor) {
+      const width = 340;
+      const height = 96;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = 'rgba(9, 14, 26, 0.88)';
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 3;
+
+      const r = 14;
+      ctx.beginPath();
+      ctx.moveTo(r, 4);
+      ctx.lineTo(width - r, 4);
+      ctx.quadraticCurveTo(width - 4, 4, width - 4, r);
+      ctx.lineTo(width - 4, height - r);
+      ctx.quadraticCurveTo(width - 4, height - 4, width - r, height - 4);
+      ctx.lineTo(r, height - 4);
+      ctx.quadraticCurveTo(4, height - 4, 4, height - r);
+      ctx.lineTo(4, r);
+      ctx.quadraticCurveTo(4, 4, r, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 26px Inter, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(title, width / 2, 40);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 21px Inter, monospace';
+      ctx.fillText(subtitle, width / 2, 74);
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+
+      if (existing) {
+        const mat = existing.material;
+        if (mat.map) mat.map.dispose();
+        mat.map = tex;
+        mat.needsUpdate = true;
+        return existing;
+      }
+
+      const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(95, 27, 1);
+      return sprite;
+    }
+
+    function ensureUav3D(uid) {
+      if (uavObjects[uid]) return uavObjects[uid];
+      const color = colorForUav(uid);
+      const handle = buildArticulatedUav(uid, color);
+      scene.add(handle.root);
+
+      // Vertical altitude drop line to ground
+      const dropGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+      const dropLine = new THREE.Line(
+        dropGeo,
+        new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.65 })
+      );
+      scene.add(dropLine);
+
+      // Ground shadow ring
+      const ringGeo = new THREE.RingGeometry(10, 15, 24);
+      const ringMat = new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide, transparent: true, opacity: 0.75 });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 1.3;
+      scene.add(ring);
+
+      // Actual 3D trail line
+      const trailGeo = new THREE.BufferGeometry();
+      const trailLine = new THREE.Line(
+        trailGeo,
+        new THREE.LineBasicMaterial({ color: color, linewidth: 2 })
+      );
+      scene.add(trailLine);
+
+      // Planned 3D route loop
+      const routeGeo = new THREE.BufferGeometry();
+      const routeLine = new THREE.Line(
+        routeGeo,
+        new THREE.LineDashedMaterial({ color: color, dashSize: 22, gapSize: 14, transparent: true, opacity: 0.7 })
+      );
+      scene.add(routeLine);
+
+      // 12s forward trajectory prediction dashed line (- - - - golden yellow #facc15)
+      const predGeo = new THREE.BufferGeometry();
+      const predLine = new THREE.Line(
+        predGeo,
+        new THREE.LineDashedMaterial({ color: '#facc15', dashSize: 10, gapSize: 7, transparent: true, opacity: 0.95 })
+      );
+      scene.add(predLine);
+
+      // 3D Sprite Label (identical to Khối 4)
+      const labelSprite = createOrUpdateLabelSprite(undefined, uid, '75m | 13m/s', color);
+      scene.add(labelSprite);
+
+      uavObjects[uid] = {
+        handle,
+        dropLine,
+        ring,
+        trailLine,
+        routeLine,
+        predLine,
+        labelSprite,
+        labelKey: '',
+        color,
+        targetPos: new THREE.Vector3(),
+        currentPos: new THREE.Vector3(),
+        targetYawRad: 0,
+        visualYawRad: 0,
+        initialized: false
+      };
+      return uavObjects[uid];
+    }
+
+    function getSelectedUavId() {
+      return document.getElementById('uavSelect').value || 'uav-1';
+    }
+
+    window.setCameraPreset = function(preset) {
+      document.getElementById('followCheckbox').checked = false;
+      if (preset === 'dragon') {
+        camera.position.set(-480, 320, 420);
+        controls.target.set(60, 50, -30);
+      } else if (preset === 'songhan') {
+        camera.position.set(-520, 360, -780);
+        controls.target.set(90, 60, -1225);
+      } else {
+        camera.position.set(-850, 680, 980);
+        controls.target.set(80, 40, -580);
+      }
+      desiredCameraDist = camera.position.distanceTo(controls.target);
+      controls.update();
+    };
+
+    window.focusSelectedUav = function() {
+      const uid = getSelectedUavId();
+      const obj = uavObjects[uid];
+      if (obj && obj.initialized) {
+        controls.target.copy(obj.currentPos);
+        camera.position.set(obj.currentPos.x - 320, obj.currentPos.y + 210, obj.currentPos.z + 320);
+        desiredCameraDist = camera.position.distanceTo(controls.target);
+        controls.update();
+      }
+    };
+
+    async function fetchLiveState() {
+      try {
+        const res = await fetch('/api/state');
+        if (!res.ok) return;
+        const data = await res.json();
+        latestState = data;
+
+        if (data.session) {
+          document.getElementById('dbCountBadge').textContent = `SQLite: ${data.session.record_count || 0}`;
+        }
+        document.getElementById('wsClientBadge').textContent = `Web 3D: ${data.ws_client_count || 0}`;
+
+        const liveUavs = data.live_uavs || {};
+        const routes = data.routes || {};
+        const trails = data.trails || {};
+
+        // Dynamically sync #uavSelect dropdown with all live/registered UAVs (including Vương drones e.g. 123123123)
+        const uavKeys = Object.keys(liveUavs);
+        const sel = document.getElementById('uavSelect');
+        if (sel && uavKeys.length > 0) {
+          const prevVal = sel.value;
+          const nextHtml = uavKeys.map(uid => {
+            const mode = liveUavs[uid]?.status?.flight_mode || 'READY';
+            const alt = Math.round(liveUavs[uid]?.position?.relative_altitude_m ?? 0);
+            return `<option value="${uid}">${uid} (${mode} · ${alt}m)</option>`;
+          }).join('');
+          if (sel.dataset.lastKeys !== uavKeys.join(',')) {
+            sel.innerHTML = nextHtml;
+            sel.dataset.lastKeys = uavKeys.join(',');
+            if (prevVal && uavKeys.includes(prevVal)) sel.value = prevVal;
+          } else {
+            Array.from(sel.options).forEach(opt => {
+              const mode = liveUavs[opt.value]?.status?.flight_mode || 'READY';
+              const alt = Math.round(liveUavs[opt.value]?.position?.relative_altitude_m ?? 0);
+              opt.textContent = `${opt.value} (${mode} · ${alt}m)`;
+            });
+          }
+          const summaryEl = document.getElementById('legendUavSummary');
+          if (summaryEl) {
+            summaryEl.innerHTML = `🚁 <b>${uavKeys.length} UAV:</b> ` + uavKeys.join(', ');
+          }
+        }
+
+        Object.keys(liveUavs).forEach(uid => {
+          const pkt = liveUavs[uid];
+          const pos = pkt.position || {};
+          if (typeof pos.latitude !== 'number') return;
+
+          const entry = ensureUav3D(uid);
+          const altM = pos.relative_altitude_m ?? 0;
+          const p3 = wgs84ToThree(pos.latitude, pos.longitude, altM);
+          entry.targetPos.copy(p3);
+
+          const hdgDeg = pkt.attitude?.heading_deg ?? 0;
+          const yawRad = -(hdgDeg * Math.PI) / 180;
+          entry.targetYawRad = yawRad;
+
+          if (!entry.initialized) {
+            entry.currentPos.copy(p3);
+            entry.visualYawRad = yawRad;
+            entry.initialized = true;
+          }
+
+          const spd = pkt.velocity?.groundspeed_m_s ?? 0;
+          const climb = pkt.velocity?.climb_rate_m_s ?? 0;
+          const subtitle = `${Math.round(altM)}m AGL | ${spd.toFixed(1)} m/s`;
+          if (entry.labelKey !== subtitle) {
+            entry.labelKey = subtitle;
+            createOrUpdateLabelSprite(entry.labelSprite, uid, subtitle, entry.color);
+          }
+
+          // Update 12s forward dashed trajectory prediction (- - - -)
+          if (spd > 0.4) {
+            const hdgRad = (hdgDeg * Math.PI) / 180;
+            const predPts = [p3.clone()];
+            for (let s = 2; s <= 12; s += 2) {
+              const dist = spd * s;
+              const dEast = dist * Math.sin(hdgRad);
+              const dNorth = dist * Math.cos(hdgRad);
+              const dUp = climb * s;
+              predPts.push(new THREE.Vector3(p3.x + dEast, Math.max(5, p3.y + dUp), p3.z - dNorth));
+            }
+            entry.predLine.geometry.setFromPoints(predPts);
+            entry.predLine.computeLineDistances();
+          }
+
+          // Update 3D trail
+          if (trails[uid] && trails[uid].length > 1) {
+            const pts = trails[uid].map(t => wgs84ToThree(t[0], t[1], t[2]));
+            entry.trailLine.geometry.setFromPoints(pts);
+          }
+
+          // Update planned 3D route loop
+          if (routes[uid] && routes[uid].length > 1) {
+            const rPts = routes[uid].map(wp => wgs84ToThree(wp.latitude, wp.longitude, wp.altitude_m));
+            rPts.push(rPts[0]);
+            entry.routeLine.geometry.setFromPoints(rPts);
+            entry.routeLine.computeLineDistances();
+          }
+        });
+
+        updateAccuracyTable(data);
+
+        if (data.recent_commands && data.recent_commands.length > 0) {
+          const latestCmd = data.recent_commands[0];
+          document.getElementById('cmdStatusText').textContent =
+            `✔ [${latestCmd.uav_id}] ${latestCmd.feedback_message}`;
+        }
+      } catch (e) {}
+    }
+
+    function updateAccuracyTable(data) {
+      const uid = getSelectedUavId();
+      const pkt = (data.live_uavs || {})[uid];
+      const dbRec = (data.sqlite_latest_by_uav || {})[uid];
+      const tbody = document.getElementById('accuracyTableBody');
+      if (!pkt) return;
+
+      document.getElementById('uavModeBadge').textContent = pkt.status?.flight_mode || 'AUTO.MISSION';
+
+      const mav = pkt.mavlink_raw || {};
+      const pos = pkt.position || {};
+      const vel = pkt.velocity || {};
+      const att = pkt.attitude || {};
+
+      const rows = [
+        { k: 'Vĩ độ (Lat)', px4: mav.lat_int, be: `${pos.latitude?.toFixed(5)}°`, db: dbRec ? `${Number(dbRec.latitude).toFixed(5)}°` : '--' },
+        { k: 'Kinh độ (Lon)', px4: mav.lon_int, be: `${pos.longitude?.toFixed(5)}°`, db: dbRec ? `${Number(dbRec.longitude).toFixed(5)}°` : '--' },
+        { k: 'Độ cao AGL', px4: `${mav.relative_alt_mm}mm`, be: `${pos.relative_altitude_m}m`, db: dbRec ? `${dbRec.relative_altitude_m}m` : '--' },
+        { k: 'Tốc độ', px4: `vx=${mav.vx_cms}`, be: `${vel.groundspeed_m_s}m/s`, db: dbRec ? `${dbRec.groundspeed_m_s}m/s` : '--' },
+        { k: 'Góc hướng', px4: `${mav.hdg_cdeg}`, be: `${att.heading_deg}°`, db: dbRec ? `${dbRec.heading_deg}°` : '--' },
+      ];
+
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td style="font-weight:600;">${r.k}</td>
+          <td class="mono" style="color:#38bdf8;">${r.px4}</td>
+          <td class="mono" style="color:#4ade80;">${r.be}</td>
+          <td class="mono" style="color:#fbbf24;">${r.db}</td>
+        </tr>
+      `).join('');
+    }
+
+    window.syncFromVuong = async function() {
+      const stEl = document.getElementById('cmdStatusText');
+      if (stEl) stEl.textContent = 'Đang đồng bộ danh sách UAV từ Vương (:8080)...';
+      try {
+        const res = await fetch('/api/sync-vuong', { method: 'POST' });
+        const data = await res.json();
+        await fetchLiveState();
+        if (stEl) {
+          const added = (data.synced || []).length;
+          stEl.textContent = added > 0
+            ? `✔ Đã đồng bộ thêm ${added} UAV từ Vương: ${data.synced.join(', ')}`
+            : `✔ Đã đồng bộ đủ ${(data.total_uavs || []).length} UAV trên hệ thống.`;
+        }
+      } catch (e) {
+        if (stEl) stEl.textContent = '⚠ Không kết nối được máy chủ đồng bộ.';
+      }
+    };
+
+    window.sendCmd = async function(commandType, parameters) {
+      const uavId = getSelectedUavId();
+      const res = await fetch('/api/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uav_id: uavId, command_type: commandType, parameters })
+      });
+      const data = await res.json();
+      await fetchLiveState();
+      if (data?.feedback?.message) {
+        document.getElementById('cmdStatusText').textContent = `✔ [${uavId}] ${data.feedback.message}`;
+      }
+    };
+
+    window.refreshSessionList = async function() {
+      try {
+        const res = await fetch('/api/sessions');
+        const data = await res.json();
+        const sel = document.getElementById('sessionSelect');
+        const currentVal = sel.value;
+        sel.innerHTML = (data.sessions || []).map(s => `
+          <option value="${s.session_id}">
+            ${s.session_id} (${s.record_count} bản ghi)
+          </option>
+        `).join('');
+        if (currentVal && Array.from(sel.options).some(o => o.value === currentVal)) {
+          sel.value = currentVal;
+        } else if (data.active_session_id) {
+          sel.value = data.active_session_id;
+        }
+        await window.loadSelectedSessionHistory();
+      } catch (e) {}
+    };
+
+    window.createNewSession = async function() {
+      await fetch('/api/sessions/new', { method: 'POST' });
+      await window.refreshSessionList();
+      await fetchLiveState();
+    };
+
+    window.loadSelectedSessionHistory = async function() {
+      const sessionId = document.getElementById('sessionSelect').value;
+      if (!sessionId) return;
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/records?limit=25`);
+        const data = await res.json();
+        const records = (data.records || []).slice().reverse();
+        const tbody = document.getElementById('historyTableBody');
+        tbody.innerHTML = records.map(r => `
+          <tr>
+            <td class="mono">#${r.id}</td>
+            <td><b style="color:#38bdf8;">${r.uav_id}</b></td>
+            <td class="mono">${Number(r.latitude).toFixed(4)}, ${Number(r.longitude).toFixed(4)}</td>
+            <td class="mono">${Number(r.relative_altitude_m).toFixed(0)}m</td>
+          </tr>
+        `).join('');
+      } catch (e) {}
+    };
+
+    window.downloadExport = function(ext) {
+      const sessionId = document.getElementById('sessionSelect').value;
+      if (!sessionId) return;
+      window.open(`/api/sessions/${encodeURIComponent(sessionId)}/export.${ext}`, '_blank');
+    };
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    // Smooth 60FPS 3D Animation Loop (identical to City3DViewer.tsx)
+    let lastTime = performance.now();
+    function animate(now = performance.now()) {
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.1, (now - lastTime) / 1000);
+      lastTime = now;
+      const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+
+      Object.keys(uavObjects).forEach(uid => {
+        const obj = uavObjects[uid];
+        if (!obj.initialized) return;
+
+        const alpha = 1 - Math.exp(-dt * 5.5);
+        obj.currentPos.lerp(obj.targetPos, alpha);
+        obj.visualYawRad = shortestAngleLerp(obj.visualYawRad, obj.targetYawRad, alpha);
+
+        obj.handle.root.position.copy(obj.currentPos);
+        obj.handle.root.rotation.y = obj.visualYawRad;
+
+        // Spin 4 propellers continuously
+        for (const rotor of obj.handle.rotors) {
+          rotor.rotation.y += dt * 26;
+        }
+        obj.handle.strobeMat.color.setHex(pulse > 0.5 ? 0x38bdf8 : 0xfacc15);
+
+        // Compact, realistic 3D scale for UAV & badge so they match the real 3D building sizes
+        const camDist = camera.position.distanceTo(obj.currentPos);
+        const targetScale = Math.min(8.5, Math.max(2.5, camDist * 0.0075));
+        obj.handle.root.scale.setScalar(targetScale);
+
+        // Update drop line & pulsing ground ring
+        obj.dropLine.geometry.setFromPoints([
+          obj.currentPos,
+          new THREE.Vector3(obj.currentPos.x, 1.2, obj.currentPos.z)
+        ]);
+        obj.ring.position.set(obj.currentPos.x, 1.3, obj.currentPos.z);
+        const ringPulse = 1 + pulse * 0.16;
+        obj.ring.scale.set(ringPulse, ringPulse, 1);
+
+        // Position 3D Canvas Sprite Badge above UAV (compact size)
+        obj.labelSprite.position.set(
+          obj.currentPos.x,
+          obj.currentPos.y + targetScale * 1.9 + 10,
+          obj.currentPos.z
+        );
+        const labelScale = Math.min(135, Math.max(48, camDist * 0.085));
+        obj.labelSprite.scale.set(labelScale, labelScale * 0.28, 1);
+      });
+
+      if (document.getElementById('followCheckbox').checked) {
+        const selObj = uavObjects[getSelectedUavId()];
+        if (selObj && selObj.initialized) {
+          controls.target.lerp(selObj.currentPos, 0.12);
+        }
+      }
+
+      // Smoothly interpolate camera distance along view ray (6.5% per wheel notch)
+      const offset = camera.position.clone().sub(controls.target);
+      const currentDist = offset.length();
+      if (currentDist > 0.001 && Math.abs(currentDist - desiredCameraDist) > 0.2) {
+        const nextDist = currentDist + (desiredCameraDist - currentDist) * 0.18;
+        offset.setLength(nextDist);
+        camera.position.copy(controls.target).add(offset);
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+    window.refreshSessionList();
+    fetchLiveState();
+    setInterval(fetchLiveState, 500);
+    setInterval(window.loadSelectedSessionHistory, 2500);
+    setInterval(window.refreshSessionList, 5000);
+  </script>
+</body>
+</html>

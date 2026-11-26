@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+backend
+src
+public
+test
+*.pyc
+__pycache__
+khoi2_px4_simulator/data/*.sqlite3
